@@ -26,14 +26,16 @@ class RobotNavigationControl:
 
     def set_controller(self, controller):
         self.controller = controller
+        self.prev_pose = None
 
     def start_procthor(self):
         dataset = prior.load_dataset("procthor-10k")
         #dataset
         house = dataset["train"][0]
         type(house), house.keys(), house
-
-        controller = Controller(scene=house)
+        print("HERE1")
+        self.controller = Controller(scene=house)
+        print("HERE2")
 
     # Starts server
     def start_ai2_thor(self):
@@ -207,6 +209,41 @@ class RobotNavigationControl:
 
         self.controller.step(action="Teleport", **pos_navigate_to)
         #plot_frames(self.controller.last_event)
+
+    # Navigate to object defined by the name in the input
+    def navigate_to_pose(self, pose):
+        #plot_frames(self.controller.last_event)
+
+        # Can't navigate to an unknown pose
+        if (pose is None):
+            return
+
+        (position, rotation) = pose
+        #dict_pos = {'x': position[0], 'y': position[1], 'z': position[2]}
+
+        print("navigating to: ", pose)
+        #self.controller.step(action="Teleport", **position)
+        #self.controller.step(action="TeleportFull", **position, rotation=rotation['y'])
+        self.controller.step(action="Teleport", position=position, rotation=rotation)
+        #plot_frames(self.controller.last_event)
+
+    ##
+    # Follow through a pre-planned path
+    ##
+    def follow_planned_path(self, path_plan):
+        self.prev_pose = self.get_agent_pos_and_rotation() # This is where we are before the plan started
+
+        for pose in path_plan:
+            #print(self.get_agent_pos_and_rotation())
+            self.navigate_to_pose(pose)
+
+    ##
+    # Teleport back to the place where we were before last path plan was executed
+    ##
+    def return_to_prev_pose(self):
+        print(self.prev_pose)
+        if self.prev_pose is not None:
+            self.navigate_to_pose(self.prev_pose)
 
     def execute_action_plan(self, plan):
         for act in plan:

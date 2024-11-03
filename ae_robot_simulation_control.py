@@ -237,6 +237,8 @@ class RobotNavigationControl:
             #print(self.get_agent_pos_and_rotation())
             self.navigate_to_pose(pose)
 
+        self.controller.step(action="Done")
+
     ##
     # Teleport back to the place where we were before last path plan was executed
     ##

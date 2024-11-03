@@ -177,8 +177,11 @@ class NavigationTrainingDataExtractor:
     ##
     # Sets up the self.last_start_position and self.last_goal_position which is necessary for
     # visualizing path.
+    #
+    # If is_door is set to True, then we are navigation to a door and then we want to arrive at its
+    # center which is usually not its position. Door position is typically the hinge-side of frame.
     ##
-    def get_path_to_actual_object(self, needed_obj):
+    def get_path_to_actual_object(self, needed_obj, is_door=False):
         #return get_shortest_path_to_object_type(controller, object_id, start_position, start_rotation, **{"return_plan": return_plan})
         (start_position, start_rotation) = self.rnc.get_agent_pos_and_rotation()
 
@@ -187,10 +190,25 @@ class NavigationTrainingDataExtractor:
 
         obj = needed_obj #thor_closest_object_of_type(self.controller, object_type)
         #print(obj)
-        self.last_goal_position = obj["position"]
+        if is_door:
+            self.last_goal_position = obj["axisAlignedBoundingBox"]["center"]
+            target_position = (self.last_goal_position['x'], self.last_goal_position['y'], self.last_goal_position['z'])
+            #print("# AE: target_position: ", target_position)
+            #print("# AE: obj_pos: ", obj["position"])
+        else:
+            self.last_goal_position = obj["position"]
+            target_position = None
 
-        #print((start_position, start_rotation))
-        return get_shortest_path_to_object(self.controller, obj["objectId"], start_position, start_rotation)
+        #print("# AE: start_pose: ", (start_position, start_rotation))
+
+        #print("AE: v_angles: " + str(v_angles) + " # h_angles: " + str(h_angles)
+        #        + " # movement_params: " + str(movement_params) + " # goal_distance: " + str(goal_distance)
+        #        + " # diagonal_ok: " + str(diagonal_ok) + " # positions_only: " + str(positions_only)
+        #        + " # return_plan: " + str(return_plan) + " # as_tuples: " + str(as_tuples))
+
+        #keywords = {'v_angles': [30], 'return_plan': True}
+        keywords = {'v_angles': [0], 'return_plan': True, 'diagonal_ok': True}
+        return get_shortest_path_to_object(self.controller, obj["objectId"], start_position, start_rotation, target_position=target_position, **keywords)
 
     def get_current_pose(self):
         return self.rnc.get_agent_pos_and_rotation()
@@ -262,7 +280,8 @@ class NavigationTrainingDataExtractor:
         all_door_paths = []
         current_pose = self.get_current_pose()
         for door in doors:
-            path = self.get_path_to_actual_object(door)
+            path_and_plan = self.get_path_to_actual_object(door, is_door=True)
+            path = path_and_plan[0]
             path_cost = get_path_length(path, current_pose)
             all_door_paths.append((path_cost, path))
             #print(str(get_path_length(path, current_pose)))
@@ -276,5 +295,5 @@ if __name__ == "__main__":
     spp = NavigationTrainingDataExtractor("train_55")
     #path = spp.bring_me_a_bottle_of_beer()
     doors = spp.find_all_doors()
-    path = spp.get_path_to_actual_object(doors[0])
+    path = spp.get_path_to_actual_object(doors[0], is_door=True)
     spp.visualise_path(path)

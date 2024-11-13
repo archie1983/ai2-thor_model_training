@@ -1,0 +1,47 @@
+from enum import Enum
+from ultralytics import YOLO
+
+class YOLOType(Enum):
+    NANO = 1 # nano
+    MEDIUM = 2 # medium
+    LARGE = 3 # large
+    XLARGE = 4 # extra large
+
+    #@classmethod
+    def yolo_flavour(self):
+        if self == YOLOType.NANO:
+            return "yolo11n"
+        if self == YOLOType.MEDIUM:
+            return "yolo11m"
+        if self == YOLOType.LARGE:
+            return "yolo11l"
+        if self == YOLOType.XLARGE:
+            return "yolo11x"
+
+class YOLOExtractor:
+    def __init__(self, yolo_type):
+        # Load a model
+        self.model = YOLO(yolo_type.yolo_flavour()) # pretrained YOLO11 model
+
+    ##
+    # Analyze an image with YOLO and return a list of items that have been detected
+    # in the image.
+    ##
+    def what_is_in_the_picture(self, image_url):
+        image_scan_results = self.model(image_url)
+        ret_set = set()
+
+        for result in image_scan_results:
+            for box in result.boxes:
+                #print(int(box.cls.item()), box.cls, box.id)
+                category_index = int(box.cls.item())
+                res_text = result.names[category_index]
+                #print(res_text)
+                ret_set.add(res_text)
+
+        return ret_set
+
+if __name__ == "__main__":
+    ye = YOLOExtractor(YOLOType.XLARGE)
+    res = ye.what_is_in_the_picture("scene_pics/train_1/1.png")
+    print(res)

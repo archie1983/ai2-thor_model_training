@@ -10,9 +10,9 @@ class YOLOType(Enum):
     WORLD = 5
 
     #@classmethod
+    def yolo_flavour(self):
         if self == YOLOType.NANO:
             return "yolo11n"
-            def yolo_flavour(self):
         if self == YOLOType.MEDIUM:
             return "yolo11m"
         if self == YOLOType.LARGE:

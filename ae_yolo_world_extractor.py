@@ -95,11 +95,12 @@ class YOLOWorldExtractor:
 
     def process_image(self, img_url):
         print("Analysing: ", img_url)
-        (img, labels, detections, txt_labels) = run_image(runner,img_url)
+        (img, labels, detections, txt_labels) = self.run_image(self.runner,img_url)
         #print("labels: ", labels)
         #print("detections: ", detections)
         #print("txt_labels", txt_labels)
-        return txt_labels
+        just_labels = [label_text for (label_text, confidence) in txt_labels]
+        return just_labels
         #with sv.ImageSink(target_dir_path='/mount/test') as sink:
         #    sink.save_image(img, "proc_"+img_url)
 

@@ -28,12 +28,14 @@ class YOLOExtractor:
         else:
             self.model = YOLO(yolo_type.yolo_flavour()) # pretrained YOLO11 model
 
+        self.yolo_type = yolo_type
+
     ##
     # Analyze an image with YOLO and return a list of items that have been detected
     # in the image.
     ##
     def what_is_in_the_picture(self, image_url):
-        if yolo_type == YOLOType.WORLD:
+        if self.yolo_type == YOLOType.WORLD:
             return self.what_is_in_the_picture_yolo_world(image_url)
         else:
             return self.what_is_in_the_picture_yolo11(image_url)

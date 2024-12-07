@@ -4,6 +4,10 @@ from ai2_thor_utils import AI2THORUtils
 from scene_description import SceneDescription
 from ae_yolo_extractor import YOLOExtractor, YOLOType
 
+from llm_room_classifier import LLMRoomClassifier # LLM room classifier
+from room_type import RoomType
+from ae_llm import LLMType
+
 class DataSceneProcessor:
     ##
     # We can override default data storage directory (normally- the name of LLM within experiment_data folder)
@@ -132,5 +136,5 @@ class DataSceneProcessor:
         self.store_scene_file_yolo(scene_id, new_sd_with_cvm)
 
 if __name__ == "__main__":
-    dsp = DataSceneProcessor(YOLOType.MEDIUM, "pkl_CHAMELEON_full_prompt")
+    dsp = DataSceneProcessor(YOLOType.WORLD, "pkl_CHAMELEON_full_prompt")
     dsp.process_1_batch_of_data_scenes()

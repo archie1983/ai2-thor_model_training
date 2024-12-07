@@ -28,6 +28,20 @@ class YOLOWorldExtractor:
                        "cell phone, microwave, oven, toaster, sink, refrigerator, book, "
                        "clock, vase, scissors, teddy bear, hair drier, toothbrush, plate, cloud, portrait, picture with clouds, tv table, glass table")
 
+        self.class_names = ("Fridge, ToiletPaper, Spoon, SprayBottle, Painting, PaperTowelRoll, Fork, "
+                            "Mug, Pan, Ladle, Pillow, HousePlant, Television, Sofa, Newspaper, Cabinet, "
+                            "ClothesDryer, Boots, SinkBasin, Desktop, Bottle, CD, DishSponge, KeyChain, "
+                            "ButterKnife, RemoteControl, Pencil, Potato, Vase, Bowl, CreditCard, Shelf, "
+                            "CoffeeMachine, Book, DogBed, Wall, BasketBall, Toilet, Laptop, Tomato, "
+                            "CellPhone, Sink, WashingMachine, GarbageCan, Cup, Watch, Plate, TVStand, "
+                            "Dumbbell, LaundryHamper, Knife, Pen, Floor, Box, Stool, GarbageBag, Window, "
+                            "Candle, ShelvingUnit, Apple, FloorLamp, Desk, Chair, PepperShaker, SoapBar, "
+                            "SaltShaker, TissueBox, Doorframe, DeskLamp, CounterTop, CoffeeTable, Microwave, "
+                            "SideTable, Dresser, Egg, Toaster, Ottoman, Bread, SoapBottle, Safe, DiningTable, "
+                            "Pot, Kettle, Lettuce, TeddyBear, Spatula, Drawer, ArmChair, Cart, WineBottle, Plunger, "
+                            "Statue, AlarmClock, TennisRacket, Cloth, BaseballBat, Doorway, Faucet, Bed")
+
+
         # load config
         self.cfg = Config.fromfile(
             "./yolo_world_configs_and_weights/yolo_world_l_t2i_bn_2e-4_100e_4x8gpus_obj365v1_goldg_train_lvis_minival.py"

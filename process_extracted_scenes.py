@@ -7,13 +7,17 @@ from ae_yolo_extractor import YOLOExtractor, YOLOType
 from llm_room_classifier import LLMRoomClassifier # LLM room classifier
 from room_type import RoomType
 from ae_llm import LLMType
+from time import time
 
 class DataSceneProcessor:
     ##
     # We can override default data storage directory (normally- the name of LLM within experiment_data folder)
     ##
-    def __init__(self, yolo_type, data_store_dir = ""):
-        self.item_extractor = YOLOExtractor(yolo_type)
+    def __init__(self, yolo_type, llm_type, data_store_dir = ""):
+        # If we want to use YOLO to extrac objects, then create a yolo extractor
+        if yolo_type != None:
+            self.item_extractor = YOLOExtractor(yolo_type)
+
         self.NUMBER_OF_SCENES_IN_BATCH = 25
         self.atu = AI2THORUtils()
         self.yolo_type = yolo_type
@@ -26,8 +30,18 @@ class DataSceneProcessor:
         else:
             self.data_store_dir = "experiment_data/" + data_store_dir
 
-        ## This is where we'll store new prepared pkl files - the ones that will also have YOLO extracted items stored
-        self.data_store_dir_yolo = "experiment_data/" + "pkl_yolo_" + self.yolo_type.name
+        # Storing copy of LLM type
+        if llm_type != None:
+            self.llm_type = llm_type
+            # If we want to use LLM to classify rooms by their objects (extracted with YOLO),
+            # then creating an LLM classifier
+            self.lrc = LLMRoomClassifier(llm_type) # LLM classifier
+            ## This is where we'll store new prepared pkl files - the ones that will also have YOLO extracted items stored
+            self.data_store_dir_yolo = "experiment_data/" + "pkl_yolo_" + self.llm_type.name
+        else:
+            self.llm_type = None
+            ## This is where we'll store new prepared pkl files - the ones that will also have YOLO extracted items stored
+            self.data_store_dir_yolo = "experiment_data/" + "pkl_yolo_" + self.yolo_type.name
 
         self.scene_mgmt = SceneManagement(self.data_store_dir)
 
@@ -105,30 +119,60 @@ class DataSceneProcessor:
             print("Room Type SVC: " + point["room_type_svc"].name)
             points_cnt += 1
 
-            # Now let's try to analyze the pictures with YOLO and see what items do we see in each of them.
-            items_in_imgage_yolo = self.item_extractor.what_is_in_the_picture(img_url)
-            print("Items by YOLO: " + str(items_in_imgage_yolo))
 
-            ## Let's not do items in the picture inference yet with CVM- I'm not yet sure how to parse the item list.
-            items_in_image_cvm = ""
-            #items_in_image = self.crc.extract_items_from_this_image(img_url)
-            #print("Items in image: " + items_in_image)
-            #print("\n")
+            if self.llm_type != None:
+                ## Now let's classify a room based on YOLO detected objects
+                t0 = time()
+                (rt_llm, full_ans_llm) = self.lrc.classify_room_by_this_object_set(objs_at_this_pos)
+                llm_elapsed_time = round(time() - t0, 5)
 
-            new_sd_with_cvm.addPoint(point["point_pose"],
-                                    point["room_type_llm"],
-                                    point["room_type_svc"],
-                                    point["room_type_cvm"],
-                                    point["room_type_gt"],
-                                    point["visible_objects_at_this_point"],
-                                    items_in_image_cvm,
-                                    items_in_imgage_yolo,
-                                    point["front_view_at_this_point"],
-                                    point["elapsed_time_llm"],
-                                    point["elapsed_time_svc"],
-                                    point["elapsed_time_cvm"],
-                                    point["llm_text"],
-                                    point["cvm_text"])
+                print("Room by YOLO + LLM: " + rt_llm.name)
+
+                new_sd_with_cvm.addPoint(point["point_pose"],
+                                        point["room_type_llm"],
+                                        point["room_type_svc"],
+                                        point["room_type_cvm"],
+                                        rt_llm,
+                                        point["room_type_gt"],
+                                        point["visible_objects_at_this_point"],
+                                        point["visible_objects_by_cvm"],
+                                        point["items_in_imgage_yolo"],
+                                        point["front_view_at_this_point"],
+                                        point["elapsed_time_llm"],
+                                        point["elapsed_time_svc"],
+                                        point["elapsed_time_cvm"],
+                                        llm_elapsed_time,
+                                        point["llm_text"],
+                                        point["cvm_text"],
+                                        full_ans_llm
+                                        )
+
+            else:
+                # Now let's try to analyze the pictures with YOLO and see what items do we see in each of them.
+                items_in_imgage_yolo = self.item_extractor.what_is_in_the_picture(img_url)
+                print("Items by YOLO: " + str(items_in_imgage_yolo))
+
+                #items_in_image = self.crc.extract_items_from_this_image(img_url)
+                #print("Items in image: " + items_in_image)
+                #print("\n")
+
+                new_sd_with_cvm.addPoint(point["point_pose"],
+                                        point["room_type_llm"],
+                                        point["room_type_svc"],
+                                        point["room_type_cvm"],
+                                        "",
+                                        point["room_type_gt"],
+                                        point["visible_objects_at_this_point"],
+                                        point["visible_objects_by_cvm"],
+                                        items_in_imgage_yolo,
+                                        point["front_view_at_this_point"],
+                                        point["elapsed_time_llm"],
+                                        point["elapsed_time_svc"],
+                                        point["elapsed_time_cvm"],
+                                        0,
+                                        point["llm_text"],
+                                        point["cvm_text"],
+                                        "")
 
             if self.DEBUG and points_cnt >= 3:
                 break
@@ -136,5 +180,10 @@ class DataSceneProcessor:
         self.store_scene_file_yolo(scene_id, new_sd_with_cvm)
 
 if __name__ == "__main__":
-    dsp = DataSceneProcessor(YOLOType.WORLD, "pkl_CHAMELEON_full_prompt")
+    ## To extract visual objects using YOLO World
+    #dsp = DataSceneProcessor(YOLOType.WORLD, None, "pkl_CHAMELEON_full_prompt")
+    #dsp.process_1_batch_of_data_scenes()
+
+    ## To classify rooms using YOLO-World extracted visual objects
+    dsp = DataSceneProcessor(None, LLMType.LLAMA, "pkl_yolo_WORLD")
     dsp.process_1_batch_of_data_scenes()

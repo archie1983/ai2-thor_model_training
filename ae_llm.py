@@ -363,4 +363,4 @@ class LLMControl:
         ret_answer = RoomType.parse_llm_response(full_answer)
 
         #print("NDX: " + str(ndx) + " : " + str(len(full_answer)) + " : " + full_answer[ndx + 12] + " ## " + ret_answer)
-        return ret_answer
+        return (ret_answer, full_answer)

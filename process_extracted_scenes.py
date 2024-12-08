@@ -113,8 +113,9 @@ class DataSceneProcessor:
             # printing out a few already existing data about each point
             img_url = point["front_view_at_this_point"]
             print("################## NEW POINT:################# Image: " + img_url)
-            objs_at_this_pos = self.atu.get_visible_object_names_from_collection_csv_unique(point["visible_objects_at_this_point"])
-            print("Objects (AI2-THOR): " + objs_at_this_pos)
+            #objs_at_this_pos = self.atu.get_visible_object_names_from_collection_csv_unique(point["visible_objects_at_this_point"])
+            #print("Objects (AI2-THOR): " + objs_at_this_pos)
+            print("Objects (YOLO): ", point["visible_objects_by_yolo"])
             print("Room Type GT: " + point["room_type_gt"].name)
             print("Room Type SVC: " + point["room_type_svc"].name)
             points_cnt += 1
@@ -123,10 +124,14 @@ class DataSceneProcessor:
             if self.llm_type != None:
                 ## Now let's classify a room based on YOLO detected objects
                 t0 = time()
-                (rt_llm, full_ans_llm) = self.lrc.classify_room_by_this_object_set(objs_at_this_pos)
+                (rt_llm, full_ans_llm) = self.lrc.classify_room_by_this_object_set(point["visible_objects_by_yolo"])
                 llm_elapsed_time = round(time() - t0, 5)
 
-                print("Room by YOLO + LLM: " + rt_llm.name)
+                if (rt_llm == point["room_type_gt"]):
+                    print("CORRECT")
+                else:
+                    print("NGT")
+                print("£££Room by YOLO + LLM: " + rt_llm.name + " £££")
 
                 new_sd_with_cvm.addPoint(point["point_pose"],
                                         point["room_type_llm"],
@@ -136,7 +141,7 @@ class DataSceneProcessor:
                                         point["room_type_gt"],
                                         point["visible_objects_at_this_point"],
                                         point["visible_objects_by_cvm"],
-                                        point["items_in_imgage_yolo"],
+                                        point["visible_objects_by_yolo"],
                                         point["front_view_at_this_point"],
                                         point["elapsed_time_llm"],
                                         point["elapsed_time_svc"],

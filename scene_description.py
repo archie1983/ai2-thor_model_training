@@ -31,7 +31,7 @@ class SceneDescription:
   # elapsed_time_svc - SVC inference time to classify this point
   ##
   def addPoint(self, point_pose, room_type_llm, room_type_svc, room_type_cvm,
-                room_type_yolo_llm, room_type_yolo_llm, room_type_gt, visible_objects_at_this_point,
+                room_type_yolo_llm, room_type_gt, visible_objects_at_this_point,
                 visible_objects_by_cvm, visible_objects_by_yolo, front_view_at_this_point,
                 elapsed_time_llm, elapsed_time_svc, elapsed_time_cvm, elapsed_time_yolo_llm,
                 llm_text, cvm_text, yolo_llm_text):

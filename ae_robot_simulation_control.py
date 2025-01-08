@@ -24,18 +24,23 @@ import prior
 class RobotNavigationControl:
     is_DEBUG = False
 
+    # Set a controller for the robot navigation control to use so that it
+    # can interact with the AI2-THOR environment
     def set_controller(self, controller):
         self.controller = controller
         self.prev_pose = None
+
+    # Set a mapper3D object from Thortils so that we can take snapshots of the
+    # FPV of the robot.
+    def set_mapper3D(self, mapper):
+        self.mapper = mapper
 
     def start_procthor(self):
         dataset = prior.load_dataset("procthor-10k")
         #dataset
         house = dataset["train"][0]
         type(house), house.keys(), house
-        print("HERE1")
         self.controller = Controller(scene=house)
-        print("HERE2")
 
     # Starts server
     def start_ai2_thor(self):
@@ -210,7 +215,7 @@ class RobotNavigationControl:
         self.controller.step(action="Teleport", **pos_navigate_to)
         #plot_frames(self.controller.last_event)
 
-    # Navigate to object defined by the name in the input
+    # Navigate to defined pose
     def navigate_to_pose(self, pose):
         #plot_frames(self.controller.last_event)
 
@@ -226,6 +231,7 @@ class RobotNavigationControl:
         #self.controller.step(action="TeleportFull", **position, rotation=rotation['y'])
         self.controller.step(action="Teleport", position=position, rotation=rotation)
         #plot_frames(self.controller.last_event)
+        self.mapper.get_front_view(True)
 
     ##
     # Follow through a pre-planned path

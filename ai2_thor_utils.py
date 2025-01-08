@@ -93,6 +93,14 @@ def what_room_is_point_in_ground_truth(rooms, point):
             return RoomType.interpret_label(room[0])
     return RoomType.interpret_label("NONE")
 ##
+# Ground truth functions - extracted room polygon is analyzed to get
+# its centroid (middle point).
+##
+def get_centre_of_the_room(room_polygon):
+    polygon = Polygon(room_polygon)
+    return polygon.centroid
+
+##
 # Ground truth functions - data extracted from the actual room and point is
 # tested to belong to the room polygon or not.
 ##
@@ -105,7 +113,7 @@ def get_rooms_ground_truth(house):
         room_poly = [(corner["x"], corner["z"]) for corner in room["floorPolygon"]]
         #print(room["roomType"] + " # " + str(room["floorPolygon"]))
         #print(room["roomType"] + " ?? " + str(room_poly))
-        rooms.append((room["roomType"], room_poly))
+        rooms.append((room["roomType"], room_poly, get_centre_of_the_room(room_poly)))
 
     return rooms
 

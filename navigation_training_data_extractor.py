@@ -15,6 +15,7 @@ from thortils.controller import _resolve
 from thortils.object import thor_closest_object_of_type, thor_visible_objects
 from ae_robot_simulation_control import RobotNavigationControl
 from thortils.scene import ThorSceneInfo
+from thortils.map3d import Mapper3D
 
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -82,11 +83,33 @@ class NavigationTrainingDataExtractor:
         house = dataset[data_set][scene_num]
         rooms = get_rooms_ground_truth(house)
         print("ROOMS:" + str(rooms))
-        self.controller = launch_controller({"scene": house, "VISIBILITY_DISTANCE": 3.0})
-        self.rnc.set_controller(self.controller)
+
+        if (self.controller == None):
+            self.controller = launch_controller({"scene": house, "VISIBILITY_DISTANCE": 3.0, "headless": False})
+            self.rnc.set_controller(self.controller) # This allows our control scripts to interact with AI2-THOR environment
+            self.mapper = Mapper3D(self.controller, scene_id)
+            self.rnc.set_mapper3D(self.mapper) # This allows taking FPV pictures of robot
+        else:
+            self.controller.reset(house)
+            self.mapper.set_scene_id(scene_id)
+            #self.rnc.set_controller(self.controller)
 
         #print(self.controller.scene)
         #self.scene_info = ThorSceneInfo("FloorPlan01-default", self.controller.last_event.metadata['objects'])
+
+    # Navigate to a door - any door, at this point I'm just trying out a concept.
+    def navigate_to_door(self):
+        doors = self.find_all_doors()
+        door_of_interest = doors[3]
+        path_and_plan = self.get_path_to_actual_object(door_of_interest, is_door=True)
+        path = path_and_plan[0]
+        plan = path_and_plan[1]
+
+        for element in path:
+            print(element)
+        #print(path
+
+        self.rnc.follow_planned_path(path)
 
     def get_path_to(self, object_type):
         #return get_shortest_path_to_object_type(controller, object_id, start_position, start_rotation, **{"return_plan": return_plan})
@@ -292,8 +315,10 @@ class NavigationTrainingDataExtractor:
         return result
 
 if __name__ == "__main__":
-    spp = NavigationTrainingDataExtractor("train_55")
+    ntde = NavigationTrainingDataExtractor("train_55")
     #path = spp.bring_me_a_bottle_of_beer()
-    doors = spp.find_all_doors()
-    path = spp.get_path_to_actual_object(doors[0], is_door=True)
-    spp.visualise_path(path)
+    doors = ntde.find_all_doors()
+    path = ntde.get_path_to_actual_object(doors[0], is_door=True)
+    ntde.visualise_path(path)
+
+    ntde.navigate_to_door()

@@ -3,7 +3,7 @@ import pickle
 import prior
 
 from room_type import RoomType
-from scene_description import SceneDescription, ClassifierType
+from scene_description import NavigationTrainingDataManagement, ClassifierType
 
 from thortils import (launch_controller,
                       convert_scene_to_grid_map, proper_convert_scene_to_grid_map, proper_convert_scene_to_grid_map_and_poses)
@@ -33,8 +33,8 @@ from ai2_thor_utils import (get_rooms_ground_truth,
 # object.
 ##
 class NavigationTrainingDataExtractor:
-    def __init__(self, scene_id):
-        self.data_store_dir = "experiment_data"
+    def __init__(self, scene_id, data_store_dir):
+#        self.data_store_dir = "experiment_data"
 #        self.LLM_TYPE = llm_type.name
 
 #        scene_descr_fname = self.data_store_dir + "/pkl_" + self.LLM_TYPE + "/scene_descr_" + scene_id + ".pkl"
@@ -49,13 +49,17 @@ class NavigationTrainingDataExtractor:
 #            raise Exception("No scenes data file found. Nothing to do.")
 
         self.scene_id = scene_id
+        self.data_store_dir = data_store_dir
         self.dataset = None
         self.controller = None
         self.rnc = RobotNavigationControl()
 
-        self.ae_load_proctor_scene(self.scene_id)
+        self.ae_load_proctor_scene(self.scene_id, self.data_store_dir)
         self.last_start_position = None
         self.last_goal_position = None
+
+        self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
+        self.NUMBER_OF_SCENES_IN_BATCH = 7
 
     def getDataSet(self):
         if (self.dataset is None):
@@ -72,7 +76,7 @@ class NavigationTrainingDataExtractor:
     # train, val, test and scene_number is a number of scene in that set.
     # e.g.: "train_3" or "test_10"
     ##
-    def ae_load_proctor_scene(self, scene_id):
+    def ae_load_proctor_habitat(self, scene_id):
         dataset = self.getDataSet()
 
         scene_id_split = scene_id.split("_")
@@ -84,23 +88,111 @@ class NavigationTrainingDataExtractor:
         rooms = get_rooms_ground_truth(house)
         print("ROOMS:" + str(rooms))
 
-        if (self.controller == None):
-            self.controller = launch_controller({"scene": house, "VISIBILITY_DISTANCE": 3.0, "headless": False})
-            self.rnc.set_controller(self.controller) # This allows our control scripts to interact with AI2-THOR environment
-            self.mapper = Mapper3D(self.controller, scene_id)
-            self.rnc.set_mapper3D(self.mapper) # This allows taking FPV pictures of robot
-        else:
-            self.controller.reset(house)
-            self.mapper.set_scene_id(scene_id)
-            #self.rnc.set_controller(self.controller)
+        # For now accept every habitat as good. We may want to introduce some
+        # logic here at a later time to only explore suitable rooms using some
+        # criteria that I don't know yet.
+        habitat_ok = True
 
         #print(self.controller.scene)
         #self.scene_info = ThorSceneInfo("FloorPlan01-default", self.controller.last_event.metadata['objects'])
 
+        if habitat_ok:
+            return house
+        else
+            return None
+
+    # Load an AI2-THOR controller with the chosen habitat and start exploration
+    def ae_process_proctor_habitat(habitat, habitat_id):
+
+        self.habitat_mgmt.start_habitat(scene_id)
+
+        if (self.controller == None):
+            self.controller = launch_controller({"scene": habitat, "VISIBILITY_DISTANCE": 3.0, "headless": False})
+            self.rnc.set_controller(self.controller) # This allows our control scripts to interact with AI2-THOR environment
+            self.mapper = Mapper3D(self.controller)
+            self.rnc.set_mapper3D(self.mapper) # This allows taking FPV pictures of robot
+        else:
+            self.controller.reset(habitat)
+            #self.rnc.set_controller(self.controller)
+
+        self.do_all_habitat_explorations()
+        self.habitat_mgmt.end_habitat()
+
+    # Generate all random points that we want to generate and navigate from there
+    # to whatever target we want (door, or middle of room, or whatever)
+    def do_all_habitat_explorations(self):
+        """
+        keywords are optional arguments for Mapper3D.automate.
+        Includes:
+            num_stops=20,
+            num_rotates=4,
+            sep=1.25,
+            downsample=True,
+            **kwargs):
+        """
+        # First generate random positions where we're going to teleport to and then navigate from there
+        # to whatever we want to navigate to.
+        keywords = {'num_stops': 100, 'num_rotates': 8, 'sep': 1.25, 'downsample': True, 'v_angles': [30]}
+        self.mapper.automate(**keywords)
+        observed_objs_at_random_explored_positions = mapper.get_observed_objs_from_exploration()
+        #front_views_at_random_explored_positions = mapper.get_front_view_images_from_exploration()
+
+        # Now go through the visited random positions
+        for pos, _ in observed_objs_at_random_explored_positions.items():
+
+
+
+## Or better don't create gridmap. All we need is a set of random positions and we
+# already know how to get those.
+##
+        """Automatically build a map, by randomly placing
+        the agent in the environment, taking RGBD images,
+        and then update the map;
+
+        num_stops: Number of places the agent will be placed
+        num_rotates: Number of random rotations at each place
+        sep: the minimum separation the sampled agent locations should have
+
+        kwargs: See thortils.vision.projection.open3d_pcd_from_rgbd;
+
+        Will reset the agent to the initial pose after finish.
+
+        After finish, you can access the map through the map attribute."""
+        rnd = random.Random(seed)
+
+        initial_agent_pose = tt.thor_agent_pose(self.controller)
+        initial_horizon = tt.thor_camera_horizon(self.controller.last_event)
+
+        reachable_positions = tt.thor_reachable_positions(self.controller)
+        placements = sep_spatial_sample(reachable_positions, sep, num_stops,
+                                        rnd=rnd)
+
+        for pos in tqdm(placements, desc="Building map"):
+            for _ in range(num_rotates):
+                event = tt.thor_place_agent_randomly(self.controller,
+                                                     pos=pos,
+                                                     v_angles=v_angles,
+                                                     h_angles=h_angles,
+                                                     rnd=rnd)
+
+        ## This will teleport us randomly to different positions. Maybe we don't even
+        # need num_rotates because we will want to be facing general direction of navigation
+        # anyway, We will therefore need some routine to generate a vector (euclidian vector)
+        # to the target. But that's for some other day. Gotta sleep now.
+
+
+
+
+
+        for expl in exploareitons:
+            ## Teleport, then start new exploration. Achieve goal. Then repeat.
+            habitat_data_store = self.habitat_mgmt.start_new_exploration()
+            self.mapper.set_scene_id(habitat_id, habitat_data_store)
+
     # Navigate to a door - any door, at this point I'm just trying out a concept.
     def navigate_to_door(self):
         doors = self.find_all_doors()
-        door_of_interest = doors[3]
+        door_of_interest = doors[0]
         path_and_plan = self.get_path_to_actual_object(door_of_interest, is_door=True)
         path = path_and_plan[0]
         plan = path_and_plan[1]
@@ -314,11 +406,31 @@ class NavigationTrainingDataExtractor:
         #    print(str(result[i]))
         return result
 
+    def process_1_batch_of_data_scenes(self):
+        highest_habitat_index = self.habitat_mgmt.last_index_extracted()
+        print("Highest index explored: " + str(highest_habitat_index))
+        processed_scenes_in_this_batch = 0
+
+        while processed_scenes_in_this_batch < self.NUMBER_OF_SCENES_IN_BATCH:
+            scene_id = "train_" + str(highest_scene_index + 1)
+            print("Processing " + scene_id)
+            habitat = self.ae_load_proctor_habitat(scene_id)
+            highest_scene_index += 1
+            if not habitat:
+                continue
+
+            self.ae_process_proctor_habitat(habitat, scene_id)
+
+            processed_scenes_in_this_batch += 1
+
 if __name__ == "__main__":
-    ntde = NavigationTrainingDataExtractor("train_55")
+    ntde = NavigationTrainingDataExtractor("train_55", "scene_pics")
     #path = spp.bring_me_a_bottle_of_beer()
     doors = ntde.find_all_doors()
-    path = ntde.get_path_to_actual_object(doors[0], is_door=True)
-    ntde.visualise_path(path)
 
+    path_and_plan = ntde.get_path_to_actual_object(doors[0], is_door=True)
+    path = path_and_plan[0]
+    plan = path_and_plan[1]
+
+    ntde.visualise_path(path)
     ntde.navigate_to_door()

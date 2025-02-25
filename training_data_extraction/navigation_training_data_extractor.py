@@ -26,7 +26,8 @@ import copy
 from ai2_thor_utils import (get_rooms_ground_truth,
                             get_visible_objects_from_collection,
                             get_all_objects, get_all_objects_of_type,
-                            get_path_length)
+                            get_path_length, get_centre_of_the_room,
+                            room_this_point_belongs_to, angle_to_turn_to_face_p2_from_p1)
 ##
 # This class will load a scene from ProcThor and then start harvesting dat from
 # it that can be used for training our neural networks (the intuition CNN
@@ -42,6 +43,7 @@ class NavigationTrainingDataExtractor:
 
         self.last_start_position = None
         self.last_goal_position = None
+        self.rooms_in_habitat = None
 
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
         self.NUMBER_OF_HABITATS_IN_BATCH = 1
@@ -65,8 +67,8 @@ class NavigationTrainingDataExtractor:
 
         print("Loading : " + data_split + "[" + str(habitat_id) + "]")
         house = dataset[data_split][habitat_id]
-        rooms = get_rooms_ground_truth(house)
-        print("ROOMS:" + str(rooms))
+        self.rooms_in_habitat = get_rooms_ground_truth(house)
+        #print("ROOMS:" + str(self.rooms_in_habitat))
 
         # For now accept every habitat as good. We may want to introduce some
         # logic here at a later time to only explore suitable rooms using some
@@ -133,6 +135,14 @@ class NavigationTrainingDataExtractor:
             # append a rotation to the place. We will want to change this to face
             # what we want to face
             place_with_rtn = p + (0,)
+
+            point_for_room_search = (p[0], "", p[1])
+
+            room_of_placement = room_this_point_belongs_to(self.rooms_in_habitat, point_for_room_search)
+            print("Placement: ", place_with_rtn)
+            print("ROOM of placement: ", room_of_placement)
+            print("Turn: ", angle_to_turn_to_face_p2_from_p1(p, (room_of_placement[2].x, room_of_placement[2].y)))
+
             ## Teleport, then start new exploration. Achieve goal. Then repeat.
             self.rnc.teleport_to(place_with_rtn)
 
@@ -374,6 +384,9 @@ class NavigationTrainingDataExtractor:
 
             self.ae_process_proctor_habitat(habitat, habitat_id)
             processed_habitats_in_this_batch += 1
+
+        if (self.controller != None):
+            self.controller.stop()
 
 
 if __name__ == "__main__":

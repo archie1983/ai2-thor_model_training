@@ -1,6 +1,7 @@
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from room_type import RoomType
+import math
 
 ##
 # My own utilities functions for AI2-THOR. I couldn't find analogous functions in Thortils,
@@ -73,6 +74,30 @@ class AI2THORUtils:
 
         return objs_at_this_pos
 
+##
+# Calculates the angle that we need to turn in order to face p2 if we are
+# standing at p1.
+##
+def angle_to_turn_to_face_p2_from_p1(p1, p2):
+    # Define the coordinates of the two points
+    (x1, y1) = p1
+    (x2, y2) = p2
+
+    # Calculate the vector components from point 1 to point 2
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Calculate the angle using atan2
+    angle_to_face_point2 = math.atan2(dy, dx)
+
+    # Convert the angle from radians to degrees if needed
+    angle_degrees = math.degrees(angle_to_face_point2)
+
+    # Normalize the angle to be between 0 and 360 degrees
+    if angle_degrees < 0:
+        angle_degrees += 360
+
+    return angle_degrees
 
 ##
 # Ground truth functions - data extracted from the actual room and point is
@@ -83,6 +108,7 @@ def is_point_inside_room_ground_truth(point_to_test, room_polygon):
     point = Point(x, z)
     polygon = Polygon(room_polygon)
     return polygon.contains(point)
+
 ##
 # Ground truth functions - data extracted from the actual room and point is
 # tested to belong to the room polygon or not.
@@ -92,6 +118,17 @@ def what_room_is_point_in_ground_truth(rooms, point):
         if is_point_inside_room_ground_truth(point, room[1]):
             return RoomType.interpret_label(room[0])
     return RoomType.interpret_label("NONE")
+
+##
+# Returns the room that the given point belongs to.
+##
+def room_this_point_belongs_to(rooms, point):
+    for room in rooms:
+        if is_point_inside_room_ground_truth(point, room[1]):
+            return room
+
+    return None
+
 ##
 # Ground truth functions - extracted room polygon is analyzed to get
 # its centroid (middle point).

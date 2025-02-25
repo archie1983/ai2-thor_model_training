@@ -18,6 +18,10 @@ from ai2thor_colab import (
 
 import prior
 
+from thortils import thor_teleport2d
+from thortils.controller import _resolve
+from thortils.agent import thor_agent_pose
+
 # Class for controlling robot navigation. This is where we will have all the navigation commands.
 # This has NOT yet got the LLM connected, but merely a set of tools to move the robot and to interact
 # with the simulation environment.
@@ -310,3 +314,13 @@ class RobotNavigationControl:
         event = self.controller.step('ToggleMapView')
         self.controller.step('ToggleMapView')
         return event.frame
+
+    ##
+    # Teleport to an arbitrary pose. The pose is expected to be in
+    # the format of (x, y, th) where x and y are 2D coordinates but th
+    # is a rotational component - degrees.
+    ##
+    def teleport_to(self, pose):
+        thor_teleport2d(self.controller, pose)
+        event = _resolve(self.controller)
+        self.last_start_position, _ = thor_agent_pose(event)

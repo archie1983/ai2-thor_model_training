@@ -45,7 +45,7 @@ class NavigationTrainingDataExtractor:
 
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
         self.NUMBER_OF_HABITATS_IN_BATCH = 1
-        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 1
+        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 3
 
     def getDataSet(self):
         if (self.dataset is None):
@@ -128,6 +128,22 @@ class NavigationTrainingDataExtractor:
 
         print(placements)
 
+        explorations_processed = 0
+        for p in placements:
+            # append a rotation to the place. We will want to change this to face
+            # what we want to face
+            place_with_rtn = p + (0,)
+            ## Teleport, then start new exploration. Achieve goal. Then repeat.
+            self.rnc.teleport_to(place_with_rtn)
+
+            # Start new exploration data storage
+            habitat_data_store = self.habitat_mgmt.start_new_exploration() # get the directory for the new exploration.
+            self.mapper.set_scene_id("", habitat_data_store)
+
+            explorations_processed += 1
+            if (explorations_processed >= self.NUMBER_OF_EXPLORATIONS_PER_HABITAT):
+                break
+
         ## This will teleport us randomly to different positions. Maybe we don't even
         # need num_rotates because we will want to be facing general direction of navigation
         # anyway, We will therefore need some routine to generate a vector (euclidian vector)
@@ -142,11 +158,6 @@ class NavigationTrainingDataExtractor:
         #                                         v_angles=v_angles,
         #                                         h_angles=h_angles,
         #                                         rnd=rnd)
-
-        #for expl in placements:
-        #    ## Teleport, then start new exploration. Achieve goal. Then repeat.
-        #    habitat_data_store = self.habitat_mgmt.start_new_exploration()
-        #    self.mapper.set_scene_id(habitat_id, habitat_data_store)
 
     # Navigate to a door - any door, at this point I'm just trying out a concept.
     def navigate_to_door(self):

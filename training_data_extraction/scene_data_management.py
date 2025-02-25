@@ -41,7 +41,7 @@ class NavigationTrainingDataManagement():
         last_expl_index = self.last_processed_exploration_in_current_staging_dir()
         exploration_id = last_expl_index + 1
 
-        self.current_exploration_dir = self.current_staging_dir + "/expl_" + exploration_id
+        self.current_exploration_dir = self.current_staging_dir + "/expl_" + str(exploration_id)
         if not os.path.exists(self.current_exploration_dir):
             os.makedirs(self.current_exploration_dir)
 

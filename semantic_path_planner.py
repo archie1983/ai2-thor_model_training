@@ -6,8 +6,9 @@ from llm_room_classifier import LLMRoomClassifier, LLMType
 from room_type import RoomType
 from scene_description import SceneDescription, ClassifierType
 
-from thortils import (launch_controller,
-                      convert_scene_to_grid_map, proper_convert_scene_to_grid_map, proper_convert_scene_to_grid_map_and_poses)
+from thortils import (launch_controller, convert_scene_to_grid_map,
+    proper_convert_scene_to_grid_map, proper_convert_scene_to_grid_map_and_poses,
+    thor_teleport2d)
 
 from thortils.navigation import get_shortest_path_to_object_type, get_shortest_path_to_object
 from thortils.agent import thor_reachable_positions, thor_agent_position, thor_agent_pose
@@ -29,7 +30,7 @@ import copy
 # object.
 ##
 class SemanticPathPlanner:
-    def __init__(self, scene_id, llm_type):
+    def __init__(self, scene_id, llm_type = LLMType.LLAMA):
         self.data_store_dir = "experiment_data"
         self.LLM_TYPE = llm_type.name
 
@@ -100,7 +101,20 @@ class SemanticPathPlanner:
         #print(obj)
         self.last_goal_position = obj["position"]
 
+        print("AE: ", start_position, start_rotation, self.last_start_position)
+        print("AE2: ", self.controller.last_event.metadata["agent"]["position"])
+        print("GOAL: ", self.last_goal_position)
         return get_shortest_path_to_object_type(self.controller, object_type, start_position, start_rotation)
+
+    ##
+    # Teleport to an arbitrary pose. The pose is expected to be in
+    # the format of (x, y, th) where x and y are 2D coordinates but th
+    # is a rotational component - degrees.
+    ##
+    def teleport_to(self, pose):
+        thor_teleport2d(self.controller, pose)
+        event = _resolve(self.controller)
+        self.last_start_position, _ = thor_agent_pose(event)
 
     ##
     # Asking LLM to tell us where to look for a bottle of beer
@@ -109,8 +123,9 @@ class SemanticPathPlanner:
         work_scene = self.scene_description
 
         room_to_look_in = self.lrc.where_to_find_this("A bottle of beer")
-        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in)
-        print(object_names_to_look_at)
+        #print("AE: " + str(room_to_look_in))
+        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in[0])
+        #print(object_names_to_look_at)
         object_to_look_at = self.lrc.where_to_look_first("A fresh, cold, unopened bottle of beer", object_names_to_look_at)
 
         path = self.get_path_to(object_to_look_at)
@@ -126,8 +141,8 @@ class SemanticPathPlanner:
         work_scene = self.scene_description
 
         room_to_look_in = self.lrc.where_to_find_this("A bottle of beer")
-        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in)
-        actual_objects_to_look_at = work_scene.getAllVisibleObjectsInThisRoom(ClassifierType.LLM, room_to_look_in)
+        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in[0])
+        actual_objects_to_look_at = work_scene.getAllVisibleObjectsInThisRoom(ClassifierType.LLM, room_to_look_in[0])
         print(object_names_to_look_at)
         object_to_look_at = self.lrc.where_to_look_first("A fresh, cold, unopened bottle of beer", object_names_to_look_at)
 
@@ -150,7 +165,7 @@ class SemanticPathPlanner:
         work_scene = self.scene_description
 
         room_to_look_in = self.lrc.where_to_find_this("Hair pin")
-        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in)
+        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in[0])
         print(object_names_to_look_at)
         object_to_look_at = self.lrc.where_to_look_first("Hair pin", object_names_to_look_at)
 
@@ -167,7 +182,7 @@ class SemanticPathPlanner:
         work_scene = self.scene_description
 
         room_to_look_in = self.lrc.where_to_find_this(what_to_bring)
-        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in)
+        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in[0])
         print(object_names_to_look_at)
         object_to_look_at = self.lrc.where_to_look_first(what_to_bring, object_names_to_look_at)
 
@@ -181,8 +196,8 @@ class SemanticPathPlanner:
         work_scene = self.scene_description
 
         room_to_look_in = self.lrc.where_to_find_this(what_to_bring)
-        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in)
-        actual_objects_to_look_at = work_scene.getAllVisibleObjectsInThisRoom(ClassifierType.LLM, room_to_look_in)
+        object_names_to_look_at = work_scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, room_to_look_in[0])
+        actual_objects_to_look_at = work_scene.getAllVisibleObjectsInThisRoom(ClassifierType.LLM, room_to_look_in[0])
         #print(object_names_to_look_at)
         object_to_look_at = self.lrc.where_to_look_first(what_to_bring, object_names_to_look_at)
 
@@ -224,6 +239,22 @@ class SemanticPathPlanner:
         )
         top_down_frame = event.third_party_camera_frames[-1]
         return Image.fromarray(top_down_frame)
+
+    ##
+    # Visualize a path between 2 arbitrary points in 2D space.
+    # The positions must be non-named tuples, e.g. (4,5,6) and
+    # NOT {'x': 4, 'y': 5, 'z': 6}
+    ##
+    def visualize_arbitrary_path(self, start_position, end_position):
+        print("H3: ", start_position)
+        print("H4: ", end_position)
+        path = get_shortest_path_to_object(self.controller, None, start_position, (0, 0, 0), end_position)
+        print("H2: ", self.last_start_position)
+        #self.last_start_position = start_position
+        self.last_start_position = {'x': start_position[0], 'y': start_position[1], 'z': start_position[2]}
+        self.last_goal_position = {'x': end_position[0], 'y': end_position[1], 'z': end_position[2]}
+
+        self.visualise_path(path)
 
     ##
     # Plot a path on the top-down view of the habitat

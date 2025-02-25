@@ -1,6 +1,7 @@
 import glob
 import pickle
-from scene_description import SceneDescription
+from scene_description import SceneDescription, ClassifierType
+from room_type import RoomType
 
 def find_observed_point_by_pose(pose, room_points):
     #(pos, rot) = pose # ((10.75, 1.57599937915802, 1.0), (30.000003814697266, 0.0, 0))
@@ -40,21 +41,24 @@ def process_scene_files():
         print(scene_f)
         #print(scene)
 
-        room_points = scene.get_all_points()
-        #print(len(room_points))
+        room_objects = scene.getAllVisibleObjectNamesInThisRoom(ClassifierType.LLM, RoomType.KITCHEN)
+#        print(len(room_objects))
+#        print(str(room_objects))
         #print(room_points[0])
-        for i in range(len(room_points)):
+        for i in range(len(scene.points_of_scene)):
+            print("AE1: ", scene.points_of_scene[i]['room_type_llm'].name)
+            #print("AE2: ", scene.points_of_scene[i]['room_type'].name)
             #print(room_points[i]['room_type_svc'].name + " :: " + room_points[i]['room_type_cvm'].name)
             #print(room_points[i].keys())
             #print("YOLO: ", room_points[i]['visible_objects_by_yolo'])
-            print("AI2-THOR: ", room_points[i]['visible_object_names'])
-            all_seen_objs.update(room_points[i]['visible_object_names'])
+#            print("AI2-THOR: ", room_points[i]['visible_object_names'])
+#            all_seen_objs.update(room_points[i]['visible_object_names'])
             #fp = find_observed_point_by_pose(room_points[i]['point_pose'], llm_room_points)
             #print(str(fp['point_pose']))
 
-    print(len(all_seen_objs), all_seen_objs)
+    print(len(room_objects), room_objects)
     obj_str = ""
-    for item in all_seen_objs:
+    for item in room_objects:
         obj_str += ", " + item
 
     obj_str = obj_str[1:]

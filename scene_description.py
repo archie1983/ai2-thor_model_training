@@ -77,6 +77,7 @@ class SceneDescription:
   def get_all_points_of_room_type(self, classifier_type, rt):
       ret_points = []
       for point in self.points_of_scene:
+          #print("AE1: ", point['room_type_llm'].name, " ## ", rt.name)
           if classifier_type == ClassifierType.LLM and point["room_type_llm"] == rt:
               ret_points.append(point)
           elif classifier_type == ClassifierType.SVC and point["room_type_svc"] == rt:
@@ -91,6 +92,8 @@ class SceneDescription:
 
   def getAllVisibleObjectNamesInThisRoom(self, classifier_type, rt):
       points = self.get_all_points_of_room_type(classifier_type, rt)
+      #print("AE::" + str(len(self.points_of_scene)))
+      #print("AE2::" + str(len(points)))
       ret_set = set()
       for p in points:
           ret_set = ret_set.union(p["visible_object_names"])

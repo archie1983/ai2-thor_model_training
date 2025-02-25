@@ -246,7 +246,8 @@ class LLMControl:
 
         object_list = [" " + obj + " " for obj in object_list]
 
-        #print("obj list post: " + str(object_list))
+        print("obj list post: " + str(object_list))
+        print("AE: question: " + self.question)
 
         #print(" LLM :" + self.llm_type.ollama_tag())
         stream = ollama.chat(

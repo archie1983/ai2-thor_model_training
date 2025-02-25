@@ -139,9 +139,10 @@ class NavigationTrainingDataExtractor:
             point_for_room_search = (p[0], "", p[1])
 
             room_of_placement = room_this_point_belongs_to(self.rooms_in_habitat, point_for_room_search)
+            room_centre = room_of_placement[2]
             print("Placement: ", place_with_rtn)
             print("ROOM of placement: ", room_of_placement)
-            print("Turn: ", angle_to_turn_to_face_p2_from_p1(p, (room_of_placement[2].x, room_of_placement[2].y)))
+            print("Turn: ", angle_to_turn_to_face_p2_from_p1(p, (room_centre.x, room_centre.y)))
 
             ## Teleport, then start new exploration. Achieve goal. Then repeat.
             self.rnc.teleport_to(place_with_rtn)
@@ -149,6 +150,18 @@ class NavigationTrainingDataExtractor:
             # Start new exploration data storage
             habitat_data_store = self.habitat_mgmt.start_new_exploration() # get the directory for the new exploration.
             self.mapper.set_scene_id("", habitat_data_store)
+
+            # Now plan path to the centre of the room
+            path_and_plan = self.get_path_to_target_point(room_centre)
+            print("PATH & PLAN: ", path_and_plan)
+
+            # Visualize the plan if needed
+            path = path_and_plan[0]
+            plan = path_and_plan[1]
+            self.visualise_path(path)
+
+            # Walk through the plan 
+            self.rnc.follow_planned_path(path)
 
             explorations_processed += 1
             if (explorations_processed >= self.NUMBER_OF_EXPLORATIONS_PER_HABITAT):
@@ -287,6 +300,29 @@ class NavigationTrainingDataExtractor:
         #keywords = {'v_angles': [30], 'return_plan': True}
         keywords = {'v_angles': [0], 'return_plan': True, 'diagonal_ok': True}
         return get_shortest_path_to_object(self.controller, obj["objectId"], start_position, start_rotation, target_position=target_position, **keywords)
+
+    ##
+    # Get path to an arbitrary point on the floor (e.g. center of the room)
+    ##
+    def get_path_to_target_point(self, target_point):
+        (start_position, start_rotation) = self.rnc.get_agent_pos_and_rotation()
+
+        event = _resolve(self.controller)
+        self.last_start_position, _ = thor_agent_pose(event)
+
+        self.last_goal_position = {'x': target_point.x, 'y': 0.9009993672370911, 'z': target_point.y}
+        target_position = (self.last_goal_position['x'], self.last_goal_position['y'], self.last_goal_position['z'])
+        #print("# AE: target_position: ", target_position)
+        #print("# AE: start_pose: ", (start_position, start_rotation))
+
+        #print("AE: v_angles: " + str(v_angles) + " # h_angles: " + str(h_angles)
+        #        + " # movement_params: " + str(movement_params) + " # goal_distance: " + str(goal_distance)
+        #        + " # diagonal_ok: " + str(diagonal_ok) + " # positions_only: " + str(positions_only)
+        #        + " # return_plan: " + str(return_plan) + " # as_tuples: " + str(as_tuples))
+
+        #keywords = {'v_angles': [30], 'return_plan': True}
+        keywords = {'v_angles': [0], 'return_plan': True, 'diagonal_ok': True}
+        return get_shortest_path_to_object(self.controller, "TargetPoint", start_position, start_rotation, target_position=target_position, **keywords)
 
     def get_current_pose(self):
         return self.rnc.get_agent_pos_and_rotation()

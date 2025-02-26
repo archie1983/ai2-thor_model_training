@@ -110,7 +110,7 @@ class NavigationTrainingDataExtractor:
         num_rotates = 4
         sep = 1.0
         v_angles = [30]
-        h_angles = [30]
+        h_angles = [0, 45, 90, 135, 180, 225, 270, 315]
 
         """
         num_stops: Number of places the agent will be placed
@@ -132,9 +132,9 @@ class NavigationTrainingDataExtractor:
 
         explorations_processed = 0
         for p in placements:
-            # append a rotation to the place. We will want to change this to face
-            # what we want to face
-            place_with_rtn = p + (0,)
+            # append a rotation to the place.
+            yaw = rnd.sample(h_angles, 1)[0]
+            place_with_rtn = p + (yaw,)
 
             point_for_room_search = (p[0], "", p[1])
 
@@ -153,15 +153,15 @@ class NavigationTrainingDataExtractor:
 
             # Now plan path to the centre of the room
             path_and_plan = self.get_path_to_target_point(room_centre)
-            print("PATH & PLAN: ", path_and_plan)
-
-            # Visualize the plan if needed
+            #print("PATH & PLAN: ", path_and_plan)
             path = path_and_plan[0]
             plan = path_and_plan[1]
+
+            # Visualize the plan if needed
             self.visualise_path(path)
 
-            # Walk through the plan 
-            self.rnc.follow_planned_path(path)
+            # Walk through the plan
+            self.rnc.follow_planned_path(path, plan)
 
             explorations_processed += 1
             if (explorations_processed >= self.NUMBER_OF_EXPLORATIONS_PER_HABITAT):

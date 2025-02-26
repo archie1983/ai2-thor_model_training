@@ -222,6 +222,14 @@ def get_all_objects_of_type(event_or_controller, obj_type_of_interest):
     return objects_of_type
 
 ##
+# Converts pose from the format of ({'x': 2.25, 'y': 0.9001, 'z': 11.75}, {'x': 0.0, 'y': 225.0, 'z': 0.0})
+# into ((2.25, 0.9001, 11.75)(0, 225, 0))
+##
+def convert_pose_set2tuple(pose_as_set):
+    return ((pose_as_set[0]['x'], pose_as_set[0]['y'], pose_as_set[0]['z']),
+            (pose_as_set[1]['x'], pose_as_set[1]['y'], pose_as_set[1]['z']))
+
+##
 # Calculates a cost (or length) of a path.
 ##
 def get_path_length(path, current_pose):

@@ -22,6 +22,8 @@ from thortils import thor_teleport2d
 from thortils.controller import _resolve
 from thortils.agent import thor_agent_pose
 
+from ai2_thor_utils import (get_path_length, convert_pose_set2tuple)
+
 # Class for controlling robot navigation. This is where we will have all the navigation commands.
 # This has NOT yet got the LLM connected, but merely a set of tools to move the robot and to interact
 # with the simulation environment.
@@ -230,22 +232,45 @@ class RobotNavigationControl:
         (position, rotation) = pose
         #dict_pos = {'x': position[0], 'y': position[1], 'z': position[2]}
 
-        print("navigating to: ", pose)
+        #print("navigating to: ", pose)
         #self.controller.step(action="Teleport", **position)
         #self.controller.step(action="TeleportFull", **position, rotation=rotation['y'])
         self.controller.step(action="Teleport", position=position, rotation=rotation)
         #plot_frames(self.controller.last_event)
-        self.mapper.get_front_view(True)
+        img_uri = self.mapper.get_front_view()
+        return img_uri
 
     ##
     # Follow through a pre-planned path
     ##
-    def follow_planned_path(self, path_plan):
+    def follow_planned_path(self, path, plan):
         self.prev_pose = self.get_agent_pos_and_rotation() # This is where we are before the plan started
 
-        for pose in path_plan:
-            #print(self.get_agent_pos_and_rotation())
-            self.navigate_to_pose(pose)
+        #print((len(path) == len(plan)))
+        print(path)
+        print(plan)
+
+        # Looks like I will need a wider angle camera and a better path length estimate to take into account
+        # smaller distances otherwise we get 0 length estimate when there is still a move left. Also turning
+        # might need a different score. 
+
+        remaining_path = path
+        img_uri = self.mapper.get_front_view()
+
+        for i in range(len(path)):
+            pose = path[i]
+            step = plan[i]
+
+            #print("c_pose: ", pose)
+            # storing the current path metrics with the last taken picture. When i == 0, the picture
+            # will be taken outside the loop and will be the very first view before the motion starts.
+            path_length_at_this_step = get_path_length(remaining_path, convert_pose_set2tuple(pose))
+            print(step[0], path_length_at_this_step, img_uri)
+
+            img_uri = self.navigate_to_pose(pose) # move to the next step and take a picture
+            remaining_path = remaining_path[1:] # update remaining path
+
+        print("STOP", 0, img_uri) # final step - we've arrived. Remaining path length = 0 and action = STOP
 
         self.controller.step(action="Done")
 

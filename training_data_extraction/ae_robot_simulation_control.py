@@ -419,6 +419,8 @@ class RobotNavigationControl:
 
         remaining_path = path
         img_uri = self.mapper.get_front_view()
+        img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
+
         print("self.prev_pose", self.prev_pose)
         path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(self.prev_pose))
 

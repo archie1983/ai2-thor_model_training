@@ -17,7 +17,7 @@ from . import RobotNavigationControl
 from thortils.scene import ThorSceneInfo
 from thortils.map3d import Mapper3D
 
-from thortils.utils.math import sep_spatial_sample, euclidean_dist
+from thortils.utils.math import sep_spatial_sample
 import thortils as tt
 
 import matplotlib.pyplot as plt
@@ -46,7 +46,7 @@ class NavigationTrainingDataExtractor:
         self.rooms_in_habitat = None
 
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
-        self.NUMBER_OF_HABITATS_IN_BATCH = 1
+        self.NUMBER_OF_HABITATS_IN_BATCH = 2
         self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 3
 
     def getDataSet(self):
@@ -95,6 +95,8 @@ class NavigationTrainingDataExtractor:
             self.rnc.set_mapper3D(self.mapper) # This allows taking FPV pictures of robot
         else:
             self.controller.reset(habitat)
+            self.reset_state()
+            self.rnc.reset_state()
             #self.rnc.set_controller(self.controller)
 
         self.do_all_habitat_explorations()
@@ -255,15 +257,42 @@ class NavigationTrainingDataExtractor:
         pose["farClippingPlane"] = 50
         del pose["orthographicSize"]
 
-        # add the camera to the scene
-        event = self.controller.step(
-            action="AddThirdPartyCamera",
-            **pose,
-            skyboxColor="white",
-            raise_for_failure=True,
-        )
-        top_down_frame = event.third_party_camera_frames[-1]
+        if not hasattr(self, 'has_top_down_camera'):
+            self.has_top_down_camera = False
+            self.top_down_camera_id = 0
+
+        if not self.has_top_down_camera:
+            #print("AE: Adding camera")
+            # add the camera to the scene
+            event = self.controller.step(
+                action="AddThirdPartyCamera",
+                **pose,
+                skyboxColor="white",
+                raise_for_failure=True,
+            )
+            self.top_down_camera_id = len(event.third_party_camera_frames) - 1
+            self.has_top_down_camera = True
+        else:
+            #print("AE: updating camera")
+            # If we already have a top-down view camera, then we need to update it to suit the current habitat
+            self.controller.step(
+                action="UpdateThirdPartyCamera",
+                thirdPartyCameraId=self.top_down_camera_id,
+                **pose,
+                #position=position,
+                #rotation=rotation
+            )
+
+        top_down_frame = event.third_party_camera_frames[self.top_down_camera_id]
+
         return Image.fromarray(top_down_frame)
+
+    ##
+    # Reset some internal variables, e.g. the flag that we have a top-down camera
+    ##
+    def reset_state(self):
+        self.has_top_down_camera = False
+        self.top_down_camera_id = 0
 
     ##
     # Sets up the self.last_start_position and self.last_goal_position which is necessary for
@@ -412,7 +441,7 @@ class NavigationTrainingDataExtractor:
 
         while processed_habitats_in_this_batch < self.NUMBER_OF_HABITATS_IN_BATCH:
 
-            habitat_id = highest_habitat_index + 1
+            habitat_id = highest_habitat_index + 1 + processed_habitats_in_this_batch
             habitat = self.ae_load_proctor_habitat(habitat_id)
 
             if not habitat:

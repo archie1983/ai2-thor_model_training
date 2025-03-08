@@ -3,9 +3,10 @@
 #!pip install --upgrade ai2thor ai2thor-colab &> /dev/null
 import ai2thor
 import ai2thor_colab
-import time
+import time, os, cv2
 import math
 from typing import Dict, List
+from PIL import Image
 
 from ai2thor.controller import Controller
 from ai2thor_colab import (
@@ -20,9 +21,9 @@ import prior
 
 from thortils import thor_teleport2d
 from thortils.controller import _resolve
-from thortils.agent import thor_agent_pose
+from thortils.agent import thor_agent_pose, thor_pose_as_tuple
 
-from ai2_thor_utils import (get_path_length, convert_pose_set2tuple)
+from ai2_thor_utils import (get_path_length, convert_pose_set2tuple, normalize_colors)
 
 # Class for controlling robot navigation. This is where we will have all the navigation commands.
 # This has NOT yet got the LLM connected, but merely a set of tools to move the robot and to interact
@@ -54,7 +55,7 @@ class RobotNavigationControl:
         "AI2-THOR Version: " + ai2thor.__version__
 
     # Initialises controller
-    def initialise_controller(self, third_party_cam = True):
+    def initialise_controller(self, third_party_cam = True, omni_view = True):
         self.controller = Controller(
             agentMode="default",
             visibilityDistance=3,
@@ -82,7 +83,7 @@ class RobotNavigationControl:
             print("agent_rtn : " + str(self.controller.last_event.metadata["agent"]["rotation"]))
             #print("actionReturn : " + controller.last_event.metadata["actionReturn"])
 
-
+        # If we want a top-view camera for floor plan, then add it here
         if (third_party_cam):
             event = self.controller.step(
                 action="AddThirdPartyCamera",
@@ -238,13 +239,120 @@ class RobotNavigationControl:
         self.controller.step(action="Teleport", position=position, rotation=rotation)
         #plot_frames(self.controller.last_event)
         img_uri = self.mapper.get_front_view()
-        return img_uri
+        img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
+        img_uris = [img_uri].extend(img_uri_sides)
+        return img_uris
+
+    ##
+    # Reset some internal variables, e.g. the flag that we have a top-down camera
+    ##
+    def reset_state(self):
+        self.side_cameras_exist = False
+        self.left_cam_index = 0
+        self.right_cam_index = 0
+
+    ##
+    # Get images from the side cameras, e.g., if we have 3 cameras,
+    # then this would be from the left and right ones
+    ##
+    def get_side_cameras_views(self, img_dir, img_index):
+        if not hasattr(self, 'side_cameras_exist'):
+            self.side_cameras_exist = False
+            self.left_cam_index = 0
+            self.right_cam_index = 0
+
+        """Position cameras relative to the agent's current position and rotation"""
+        event = self.controller.last_event
+        agent_position = event.metadata["agent"]["position"]
+        agent_rotation = event.metadata["agent"]["rotation"]
+
+        # Camera height offset from agent position
+        camera_height_offset = 0.1  # Slightly above agent's camera
+
+        # Cameras at 120, and 240 degrees relative to agent)
+        left_angle_offset = 240
+        right_angle_offset = 120
+        left_absolute_angle = (agent_rotation["y"] + left_angle_offset) % 360
+        right_absolute_angle = (agent_rotation["y"] + right_angle_offset) % 360
+
+        # Convert to radians for math calculations
+        left_angle_rad = math.radians(left_absolute_angle)
+        right_angle_rad = math.radians(right_absolute_angle)
+
+        # Small offset from center of agent (e.g., 0.05 units)
+        offset_distance = 0.05
+
+        # Calculate camera position (small offset from agent center)
+        left_camera_x = agent_position["x"] + offset_distance * math.sin(left_angle_rad)
+        left_camera_y = agent_position["y"] + camera_height_offset
+        left_camera_z = agent_position["z"] + offset_distance * math.cos(left_angle_rad)
+        right_camera_x = agent_position["x"] + offset_distance * math.sin(right_angle_rad)
+        right_camera_y = left_camera_y
+        right_camera_z = agent_position["z"] + offset_distance * math.cos(right_angle_rad)
+
+        print(left_camera_x, left_camera_y, left_camera_z, left_absolute_angle, left_angle_rad)
+
+        # If cameras don't exist yet, then create them, otherwise update
+        if not self.side_cameras_exist:
+            # Add here cameras to cover whole 360 degrees around robot
+            event = self.controller.step(
+                action="AddThirdPartyCamera",
+                position=dict(x=left_camera_x, y=left_camera_y, z=left_camera_z),
+                rotation=dict(x=0, y=left_absolute_angle, z=0),  # Camera at 240 degrees
+                fieldOfView=120,
+                orthographic=False
+            )
+            self.left_cam_index = len(event.third_party_camera_frames) - 1
+            event = self.controller.step(
+                action="AddThirdPartyCamera",
+                position=dict(x=right_camera_x, y=right_camera_y, z=right_camera_z),
+                rotation=dict(x=0, y=right_absolute_angle, z=0),  # Camera at 120 degrees
+                fieldOfView=120,
+                orthographic=False
+            )
+            self.right_cam_index = len(event.third_party_camera_frames) - 1
+            self.side_cameras_exist = True
+        else:
+            #UpdateThirdPartyCamera
+            # If we already have side cameras, then we need to update them to move with the current location of robot
+            self.controller.step(
+                action="UpdateThirdPartyCamera",
+                thirdPartyCameraId=self.left_cam_index,
+                position=dict(x=left_camera_x, y=left_camera_y, z=left_camera_z),
+                rotation=dict(x=0, y=left_absolute_angle, z=0)  # Camera at 240 degrees
+            )
+
+            self.controller.step(
+                action="UpdateThirdPartyCamera",
+                thirdPartyCameraId=self.right_cam_index,
+                position=dict(x=right_camera_x, y=right_camera_y, z=right_camera_z),
+                rotation=dict(x=0, y=right_absolute_angle, z=0),  # Camera at 120 degrees
+            )
+
+        # get the frames
+        #event = self.controller.last_event
+        left_frame = event.third_party_camera_frames[self.left_cam_index]
+        right_frame = event.third_party_camera_frames[self.right_cam_index]
+
+        os.makedirs(img_dir, exist_ok=True)
+
+        # store them
+        left_img_url = os.path.join(img_dir, "L_" + str(img_index) + ".png")
+        right_img_url = os.path.join(img_dir, "R_" + str(img_index) + ".png")
+
+        #cv2.imwrite(left_img_url, Image.fromarray(left_frame))
+        #cv2.imwrite(right_img_url, Image.fromarray(right_frame))
+        cv2.imwrite(left_img_url, normalize_colors(left_frame))
+        cv2.imwrite(right_img_url, normalize_colors(right_frame))
+
+        return [left_img_url, right_img_url]
 
     ##
     # Follow through a pre-planned path
     ##
     def follow_planned_path(self, path, plan):
-        self.prev_pose = self.get_agent_pos_and_rotation() # This is where we are before the plan started
+        #self.prev_pose = self.get_agent_pos_and_rotation() # This is where we are before the plan started
+        self.prev_pose = thor_agent_pose(self.controller) # This is where we are before the plan started
 
         #print((len(path) == len(plan)))
         print(path)
@@ -252,21 +360,23 @@ class RobotNavigationControl:
 
         # Looks like I will need a wider angle camera and a better path length estimate to take into account
         # smaller distances otherwise we get 0 length estimate when there is still a move left. Also turning
-        # might need a different score. 
+        # might need a different score.
 
         remaining_path = path
         img_uri = self.mapper.get_front_view()
+        print("self.prev_pose", self.prev_pose)
+        path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(self.prev_pose))
 
         for i in range(len(path)):
-            pose = path[i]
-            step = plan[i]
-
-            #print("c_pose: ", pose)
+            step = plan[i] # current step is how to get from previous point to here
             # storing the current path metrics with the last taken picture. When i == 0, the picture
             # will be taken outside the loop and will be the very first view before the motion starts.
-            path_length_at_this_step = get_path_length(remaining_path, convert_pose_set2tuple(pose))
             print(step[0], path_length_at_this_step, img_uri)
-
+            # now update the pose and recalculate path length for the next step.
+            # The very last pose will yield path length of 0 and loop will exit, but
+            # that's ok because we have a final step after the loop that we gather as STOP action
+            pose = path[i]
+            path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(pose))
             img_uri = self.navigate_to_pose(pose) # move to the next step and take a picture
             remaining_path = remaining_path[1:] # update remaining path
 

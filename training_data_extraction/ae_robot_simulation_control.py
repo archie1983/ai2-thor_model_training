@@ -30,6 +30,7 @@ from ai2_thor_utils import (get_path_length, convert_pose_set2tuple, normalize_c
 # with the simulation environment.
 class RobotNavigationControl:
     is_DEBUG = False
+    NUM_ANGLES = 3 # how many angles we want to capture from each location along the path
 
     # Set a controller for the robot navigation control to use so that it
     # can interact with the AI2-THOR environment
@@ -253,9 +254,63 @@ class RobotNavigationControl:
 
     ##
     # Get images from the side cameras, e.g., if we have 3 cameras,
-    # then this would be from the left and right ones
+    # then this would be from the left and right ones.
+    #
+    # This method rotates the robot to face in the required directions and takes pictures
     ##
     def get_side_cameras_views(self, img_dir, img_index):
+        """Capture a 360-degree panorama by rotating the agent"""
+        event = self.controller.last_event
+        original_yaw = event.metadata["agent"]["rotation"]["y"]
+        initial_position = event.metadata["agent"]["position"]
+        initial_rotation = event.metadata["agent"]["rotation"]
+        initial_standing = event.metadata["agent"]["isStanding"]  # Get current standing state
+
+        img_urls = []
+
+        # Capture frames at different angles. We already have the front view, so get the others,
+        # that's why start with 1, not 0, but divide 360 still by the full number of angles.
+        for i in range(1, self.NUM_ANGLES):
+            angle = (360 / self.NUM_ANGLES) * i
+
+            required_yaw = (original_yaw + angle) % 360
+            # Teleport to the same position but with a different rotation
+            self.controller.step(
+                action="TeleportFull",
+                position=initial_position,
+                rotation=dict(x=0, y=required_yaw, z=0),
+                horizon=initial_rotation["x"],
+                standing=initial_standing  # Include standing parameter
+            )
+
+            # Get the frame from the default camera
+            img = self.controller.last_event.cv2img
+            #frames.append(frame)
+
+            # store them
+            os.makedirs(img_dir, exist_ok=True)
+            img_url = os.path.join(img_dir, str(angle) + "_" + str(img_index) + ".png")
+            cv2.imwrite(img_url, img)
+            img_urls.append(img_url)
+
+        # Restore original position and rotation
+        self.controller.step(
+            action="TeleportFull",
+            position=initial_position,
+            rotation=initial_rotation,
+            horizon=initial_rotation["x"],
+            standing=initial_standing  # Include standing parameter
+        )
+
+        return img_urls
+
+    ##
+    # Get images from the side cameras, e.g., if we have 3 cameras,
+    # then this would be from the left and right ones.
+    #
+    # This method uses 2 extra cameras attached to the robot
+    ##
+    def get_side_cameras_views_2(self, img_dir, img_index):
         if not hasattr(self, 'side_cameras_exist'):
             self.side_cameras_exist = False
             self.left_cam_index = 0

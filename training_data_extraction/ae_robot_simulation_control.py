@@ -241,7 +241,8 @@ class RobotNavigationControl:
         #plot_frames(self.controller.last_event)
         img_uri = self.mapper.get_front_view()
         img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
-        img_uris = [img_uri].extend(img_uri_sides)
+        img_uris = [img_uri]
+        img_uris.extend(img_uri_sides)
         return img_uris
 
     ##
@@ -289,7 +290,7 @@ class RobotNavigationControl:
 
             # store them
             os.makedirs(img_dir, exist_ok=True)
-            img_url = os.path.join(img_dir, str(angle) + "_" + str(img_index) + ".png")
+            img_url = os.path.join(img_dir, str(int(angle)) + "_" + str(img_index) + ".png")
             cv2.imwrite(img_url, img)
             img_urls.append(img_url)
 
@@ -410,8 +411,9 @@ class RobotNavigationControl:
         self.prev_pose = thor_agent_pose(self.controller) # This is where we are before the plan started
 
         #print((len(path) == len(plan)))
-        print(path)
-        print(plan)
+        if (self.is_DEBUG):
+            print(path)
+            print(plan)
 
         # Looks like I will need a wider angle camera and a better path length estimate to take into account
         # smaller distances otherwise we get 0 length estimate when there is still a move left. Also turning
@@ -420,21 +422,24 @@ class RobotNavigationControl:
         remaining_path = path
         img_uri = self.mapper.get_front_view()
         img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
+        img_uris = [img_uri]
+        img_uris.extend(img_uri_sides)
 
-        print("self.prev_pose", self.prev_pose)
+        if (self.is_DEBUG):
+            print("self.prev_pose", self.prev_pose)
         path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(self.prev_pose))
 
         for i in range(len(path)):
             step = plan[i] # current step is how to get from previous point to here
             # storing the current path metrics with the last taken picture. When i == 0, the picture
             # will be taken outside the loop and will be the very first view before the motion starts.
-            print(step[0], path_length_at_this_step, img_uri)
+            print(step[0], path_length_at_this_step, img_uris)
             # now update the pose and recalculate path length for the next step.
             # The very last pose will yield path length of 0 and loop will exit, but
             # that's ok because we have a final step after the loop that we gather as STOP action
             pose = path[i]
             path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(pose))
-            img_uri = self.navigate_to_pose(pose) # move to the next step and take a picture
+            img_uris = self.navigate_to_pose(pose) # move to the next step and take a picture
             remaining_path = remaining_path[1:] # update remaining path
 
         print("STOP", 0, img_uri) # final step - we've arrived. Remaining path length = 0 and action = STOP

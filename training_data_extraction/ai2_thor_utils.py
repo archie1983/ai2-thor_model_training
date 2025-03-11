@@ -1,6 +1,6 @@
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
-from room_type import RoomType
+from . import RoomType
 import math, cv2
 from thortils.utils.math import (euclidean_dist, to_deg)
 from thortils.agent import thor_pose_as_tuple

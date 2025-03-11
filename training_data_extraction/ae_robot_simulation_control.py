@@ -23,7 +23,7 @@ from thortils import thor_teleport2d
 from thortils.controller import _resolve
 from thortils.agent import thor_agent_pose, thor_pose_as_tuple
 
-from ai2_thor_utils import (get_path_length, convert_pose_set2tuple, normalize_colors)
+from . import (get_path_length, convert_pose_set2tuple, normalize_colors)
 
 # Class for controlling robot navigation. This is where we will have all the navigation commands.
 # This has NOT yet got the LLM connected, but merely a set of tools to move the robot and to interact

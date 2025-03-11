@@ -23,7 +23,7 @@ import thortils as tt
 import matplotlib.pyplot as plt
 from PIL import Image
 import copy
-from ai2_thor_utils import (get_rooms_ground_truth,
+from . import (get_rooms_ground_truth,
                             get_visible_objects_from_collection,
                             get_all_objects, get_all_objects_of_type,
                             get_path_length, get_centre_of_the_room,

@@ -1,5 +1,5 @@
 from enum import Enum
-import glob, os, shutil
+import glob, os, shutil, pickle
 from . import DataLoadError
 
 ##
@@ -11,7 +11,10 @@ class NavigationTrainingDataManagement():
         self.data_store_dir = data_store_dir
         self.staging_dir_name = "staging"
         self.data_dir_prefix = "/h_"
+        self.pkl_file_prefix = "/hm_"
         self.current_exploration_dir = ""
+        self.current_metrics_store_fname = "" # this will be the file name for the pkl file
+        self.metrics_data = [] # we'll store metrics here in tuples for each exploration and each image
         # Create the directory where to store experiment data if it doesn't exist
         self.current_staging_dir = self.data_store_dir + self.data_dir_prefix + self.staging_dir_name
 
@@ -28,6 +31,18 @@ class NavigationTrainingDataManagement():
         # Create the directory where to store experiment data if it doesn't exist. In fact it shouldn't exist at this point
         if not os.path.exists(self.current_staging_dir):
             os.makedirs(self.current_staging_dir)
+        else:
+            raise DataLoadError("Staging directory exists when not expected. Are you running more than one instance of exploration?")
+
+        # Prepare to store data in a new pkl file for this habitat
+        self.current_metrics_store_fname = self.data_store_dir + self.pkl_file_prefix + str(self.habitat_id) + ".pkl"
+        self.metrics_data = []
+
+    ##
+    # Adds the new metrics to the data collection
+    ##
+    def add_metrics(self, new_metrics):
+        self.metrics_data.append(new_metrics)
 
     # End the current habitat exploration
     def end_habitat(self):
@@ -35,6 +50,10 @@ class NavigationTrainingDataManagement():
         # from ".../datastoredir/h_staging" to ".../datastoredir/h_x"
         if not os.path.exists(self.current_final_habitat_dir):
             os.rename(self.current_staging_dir, self.current_final_habitat_dir)
+
+        # store our data collection into a pickle file
+        pickle.dump(self.metrics_data, open(self.current_metrics_store_fname, "wb"))
+
 
     # Starts a new exploration in the current habitat
     def start_new_exploration(self):
@@ -77,6 +96,7 @@ class NavigationTrainingDataManagement():
             h_files_glob = self.data_store_dir + self.data_dir_prefix + "*"
 
         h_folders = glob.glob(h_files_glob) # habitats' folders
+        #h_folders = [ name for name in os.listdir(h_files_glob) if os.path.isdir(os.path.join(h_files_glob, name)) ]
 
         highest_index = 0
         cur_index = 0

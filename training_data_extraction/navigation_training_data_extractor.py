@@ -163,7 +163,7 @@ class NavigationTrainingDataExtractor:
             self.visualise_path(path)
 
             # Walk through the plan
-            self.rnc.follow_planned_path(path, plan)
+            self.rnc.follow_planned_path(path, plan, self.habitat_mgmt)
 
             explorations_processed += 1
             if (explorations_processed >= self.NUMBER_OF_EXPLORATIONS_PER_HABITAT):

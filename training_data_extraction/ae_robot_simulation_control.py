@@ -246,6 +246,14 @@ class RobotNavigationControl:
         return img_uris
 
     ##
+    # We may not always want the full URI from self.mapper.get_target_dir(), we may
+    # want the relative path. This will give it to us.
+    ##
+    def relative_target_dir(self, uri):
+        components = uri.split("/")
+        return components[-2] + "/" + components[-1]
+
+    ##
     # Reset some internal variables, e.g. the flag that we have a top-down camera
     ##
     def reset_state(self):
@@ -406,7 +414,7 @@ class RobotNavigationControl:
     ##
     # Follow through a pre-planned path
     ##
-    def follow_planned_path(self, path, plan):
+    def follow_planned_path(self, path, plan, data_manager):
         #self.prev_pose = self.get_agent_pos_and_rotation() # This is where we are before the plan started
         self.prev_pose = thor_agent_pose(self.controller) # This is where we are before the plan started
 
@@ -433,7 +441,9 @@ class RobotNavigationControl:
             step = plan[i] # current step is how to get from previous point to here
             # storing the current path metrics with the last taken picture. When i == 0, the picture
             # will be taken outside the loop and will be the very first view before the motion starts.
+            img_uris = [self.relative_target_dir(iu) for iu in img_uris]
             print(step[0], path_length_at_this_step, img_uris)
+            data_manager.add_metrics((step[0], path_length_at_this_step, img_uris))
             # now update the pose and recalculate path length for the next step.
             # The very last pose will yield path length of 0 and loop will exit, but
             # that's ok because we have a final step after the loop that we gather as STOP action
@@ -443,6 +453,7 @@ class RobotNavigationControl:
             remaining_path = remaining_path[1:] # update remaining path
 
         print("STOP", 0, img_uri) # final step - we've arrived. Remaining path length = 0 and action = STOP
+        data_manager.add_metrics(("STOP", 0, img_uris))
 
         self.controller.step(action="Done")
 

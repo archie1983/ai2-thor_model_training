@@ -35,7 +35,7 @@ class HabitatDataset(Dataset):
 
     def __getitem__(self, idx):
         action, path_length, image_paths = self.data[idx]
-        print("AE::::::", action, path_length, image_paths)
+        #print("AE::::::", action, path_length, image_paths)
 
         # Load images
         images = []

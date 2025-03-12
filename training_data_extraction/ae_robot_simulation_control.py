@@ -432,6 +432,7 @@ class RobotNavigationControl:
         img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
         img_uris = [img_uri]
         img_uris.extend(img_uri_sides)
+        img_uris = [self.relative_target_dir(iu) for iu in img_uris]
 
         if (self.is_DEBUG):
             print("self.prev_pose", self.prev_pose)
@@ -441,7 +442,6 @@ class RobotNavigationControl:
             step = plan[i] # current step is how to get from previous point to here
             # storing the current path metrics with the last taken picture. When i == 0, the picture
             # will be taken outside the loop and will be the very first view before the motion starts.
-            img_uris = [self.relative_target_dir(iu) for iu in img_uris]
             print(step[0], path_length_at_this_step, img_uris)
             data_manager.add_metrics((step[0], path_length_at_this_step, img_uris))
             # now update the pose and recalculate path length for the next step.
@@ -450,9 +450,10 @@ class RobotNavigationControl:
             pose = path[i]
             path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(pose))
             img_uris = self.navigate_to_pose(pose) # move to the next step and take a picture
+            img_uris = [self.relative_target_dir(iu) for iu in img_uris]
             remaining_path = remaining_path[1:] # update remaining path
 
-        print("STOP", 0, img_uri) # final step - we've arrived. Remaining path length = 0 and action = STOP
+        print("STOP", 0, img_uris) # final step - we've arrived. Remaining path length = 0 and action = STOP
         data_manager.add_metrics(("STOP", 0, img_uris))
 
         self.controller.step(action="Done")

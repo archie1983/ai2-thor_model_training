@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 class HabitatDataset(Dataset):
-    def __init__(self, pickle_files, image_dir, transform=None):
+    def __init__(self, pickle_files, image_dir, transform=None, min_expl_size = 3):
         """
         Args:
             pickle_files (list): List of paths to pickle files containing the data.
@@ -25,10 +25,18 @@ class HabitatDataset(Dataset):
             habitat_dir = pickle_file.split("/")[-1][:-4].replace("m", "")
             with open(pickle_file, 'rb') as f:
                 hab_data = pickle.load(f) # all habitat data in this pickle
-                for (action, path_length, img_uris) in hab_data: # go through it and disect each tuple
-                    img_uris = [habitat_dir + "/" + iu for iu in img_uris] # img_uris need to be adjusted with the habitat folder
-                    #self.data.extend(pickle.load(f))
-                    self.data.append((action, path_length, img_uris))
+                for (expl_length, expl_steps) in hab_data: # go through it and disect each tuple (exploration)
+
+                    # If exploration length doesn't satisfy us, we can skip it
+                    if expl_length < min_expl_size:
+                        continue
+                    #print(expl_length)
+                    # Go through all exploration steps and append it to the dataset
+                    for step in expl_steps:
+                        (action, path_length, img_uris) = step
+                        img_uris = [habitat_dir + "/" + iu for iu in img_uris] # img_uris need to be adjusted with the habitat folder
+                        #self.data.extend(pickle.load(f))
+                        self.data.append((action, path_length, img_uris))
 
     def __len__(self):
         return len(self.data)

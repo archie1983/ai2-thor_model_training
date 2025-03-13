@@ -2,7 +2,7 @@ import os
 import pickle
 import prior
 import random
-
+from IPython import get_ipython
 from . import NavigationTrainingDataManagement
 
 from thortils import (launch_controller,
@@ -20,7 +20,9 @@ from thortils.map3d import Mapper3D
 from thortils.utils.math import sep_spatial_sample
 import thortils as tt
 
+import matplotlib, sys
 import matplotlib.pyplot as plt
+
 from PIL import Image
 import copy
 from . import (get_rooms_ground_truth,
@@ -48,6 +50,11 @@ class NavigationTrainingDataExtractor:
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
         self.NUMBER_OF_HABITATS_IN_BATCH = 2
         self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 3
+
+        ## figure out where are we running- in terminal or jupyter
+        if not self.is_running_in_jupyter():
+            matplotlib.use('Agg')
+        #print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa::: ", matplotlib.get_backend())
 
     def getDataSet(self):
         if (self.dataset is None):
@@ -154,7 +161,13 @@ class NavigationTrainingDataExtractor:
             self.mapper.set_scene_id("", habitat_data_store)
 
             # Now plan path to the centre of the room
-            path_and_plan = self.get_path_to_target_point(room_centre)
+            try:
+                path_and_plan = self.get_path_to_target_point(room_centre)
+            except ValueError as e:
+                # If the path could not be planned, then drop it and carry on with the next one
+                print(f"ERROR: {e}")
+                continue
+
             #print("PATH & PLAN: ", path_and_plan)
             path = path_and_plan[0]
             plan = path_and_plan[1]
@@ -165,6 +178,8 @@ class NavigationTrainingDataExtractor:
             # Walk through the plan
             self.rnc.follow_planned_path(path, plan, self.habitat_mgmt)
 
+            # close off current exploration
+            self.habitat_mgmt.end_current_exploration()
             explorations_processed += 1
             if (explorations_processed >= self.NUMBER_OF_EXPLORATIONS_PER_HABITAT):
                 break
@@ -407,10 +422,27 @@ class NavigationTrainingDataExtractor:
             x = step[0]["x"]
             z = step[0]["z"]
             ax.scatter([x], [z], s=30, zorder=2, c="blue")
-
         plt.axis('off')
-        plt.show()
 
+        if self.is_running_in_jupyter():
+            plt.show()
+        else:
+            plt.savefig(self.habitat_mgmt.get_current_top_view_fname())
+
+    ##
+    # A way to tell if we're running in jupyter or not
+    # If in jupyter, we might want to show matplotlibs,
+    # but if in terminal, then we may want to save them.
+    ##
+    def is_running_in_jupyter(self):
+        try:
+            return get_ipython() is not None
+        except ImportError:
+            return False
+
+    ##
+    # Accessor for the controller
+    ##
     def get_controller(self):
         return self.controller
 

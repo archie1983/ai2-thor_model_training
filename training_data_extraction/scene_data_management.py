@@ -13,8 +13,11 @@ class NavigationTrainingDataManagement():
         self.data_dir_prefix = "/h_"
         self.pkl_file_prefix = "/hm_"
         self.current_exploration_dir = ""
+        self.exploration_id = 0
         self.current_metrics_store_fname = "" # this will be the file name for the pkl file
-        self.metrics_data = [] # we'll store metrics here in tuples for each exploration and each image
+        self.expl_metrics_data = [] # we'll store metrics here in tuples for each exploration and each image
+        self.habitat_metrics_data = [] # this will be metrics data at habitat level, so really a collection of expl_metrics_data collections
+
         # Create the directory where to store experiment data if it doesn't exist
         self.current_staging_dir = self.data_store_dir + self.data_dir_prefix + self.staging_dir_name
 
@@ -36,13 +39,14 @@ class NavigationTrainingDataManagement():
 
         # Prepare to store data in a new pkl file for this habitat
         self.current_metrics_store_fname = self.data_store_dir + self.pkl_file_prefix + str(self.habitat_id) + ".pkl"
-        self.metrics_data = []
+        self.expl_metrics_data = []
+        self.habitat_metrics_data = []
 
     ##
-    # Adds the new metrics to the data collection
+    # Adds the new exploration metrics to the data collection
     ##
     def add_metrics(self, new_metrics):
-        self.metrics_data.append(new_metrics)
+        self.expl_metrics_data.append(new_metrics)
 
     # End the current habitat exploration
     def end_habitat(self):
@@ -52,19 +56,30 @@ class NavigationTrainingDataManagement():
             os.rename(self.current_staging_dir, self.current_final_habitat_dir)
 
         # store our data collection into a pickle file
-        pickle.dump(self.metrics_data, open(self.current_metrics_store_fname, "wb"))
+        pickle.dump(self.habitat_metrics_data, open(self.current_metrics_store_fname, "wb"))
 
 
     # Starts a new exploration in the current habitat
     def start_new_exploration(self):
         last_expl_index = self.last_processed_exploration_in_current_staging_dir()
-        exploration_id = last_expl_index + 1
+        self.exploration_id = last_expl_index + 1
 
-        self.current_exploration_dir = self.current_staging_dir + "/expl_" + str(exploration_id)
+        self.current_exploration_dir = self.current_staging_dir + "/expl_" + str(self.exploration_id)
         if not os.path.exists(self.current_exploration_dir):
             os.makedirs(self.current_exploration_dir)
 
+        self.expl_metrics_data = []
+
         return self.current_exploration_dir
+
+    def end_current_exploration(self):
+        self.habitat_metrics_data.append((len(self.expl_metrics_data), self.expl_metrics_data))
+
+    ##
+    # Return the file URI for the top view that we might want to store
+    ##
+    def get_current_top_view_fname(self):
+        return self.current_staging_dir + "/top_expl_" + str(self.exploration_id)
 
     ##
     # Extract last exploration number from the current staging directory.

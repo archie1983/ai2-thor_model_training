@@ -7,7 +7,7 @@ from . import HabitatNeuralNetwork, HabitatDataLoading
 # and then we train.
 ##
 class HabitatNNTrainer():
-    def __init__(self, architecture_id, batch_size = 10, data_split = [0.9, 0.1]):
+    def __init__(self, architecture_id, batch_size = 10, data_split = [0.9, 0.1], min_expl_size = 0):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.architecture_id = architecture_id
 

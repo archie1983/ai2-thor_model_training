@@ -48,8 +48,8 @@ class NavigationTrainingDataExtractor:
         self.rooms_in_habitat = None
 
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
-        self.NUMBER_OF_HABITATS_IN_BATCH = 2
-        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 3
+        self.NUMBER_OF_HABITATS_IN_BATCH = 100
+        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 1000
 
         ## figure out where are we running- in terminal or jupyter
         if not self.is_running_in_jupyter():

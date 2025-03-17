@@ -1,31 +1,22 @@
-The project relies on [AI2-THOR](https://github.com/allenai/ai2thor), [ProcTHOR-10k](https://github.com/allenai/procthor-10k) dataset and several LLMs:
-* Llama3
-* Mistral
-* Gemma.
+The project relies on [AI2-THOR](https://github.com/allenai/ai2thor) and [ProcTHOR-10k](https://github.com/allenai/procthor-10k) dataset
 
-Please pull them before running this code. The required versions are specified in ae_llm.py where more can be added, but currently the following versions are used:
-
-* [gemma:7b-instruct-v1.1-q6_K](https://ollama.com/library/gemma:7b-instruct-v1.1-q6_K)
-* [mistral:7b-instruct-v0.2-q4_0](https://ollama.com/library/mistral:7b-instruct-v0.2-q4_0)
-* [mistral:7b-instruct-v0.2-q6_K](https://ollama.com/library/mistral:7b-instruct-v0.2-q6_K)
-* [llama3:8b-instruct-q6_K](https://ollama.com/library/llama3:8b-instruct-q6_K)
+Please download and install them before running this code. The AI2-THOR used is v5.0.0.
 
 You must also install Thortils version from the referenced repository in the git submodule here. The vanilla Thortils will not work as I made several important changes. The best way to do that is to set up a conda environment for this purpose and install Thortils using:
 
 ```
-git clone https://github.com/archie1983/llm_semantic_navigation
-cd llm_semantic_navigation
+git clone https://github.com/archie1983/ai2-thor_model_training
+cd ai2-thor_model_training
 git submodule init
 git submodule update
 cd thortils
 pip install --no-cache-dir -e .
 ```
 
-To demonstrate our approach, there are two main scripts:
+To demonstrate our approach, there are two main scripts- both are very basic and can be copy-pasted into a jupyter notebook or run from terminal. The real code is deeper in the **training_data_extraction** and **model_training** packages.
 
-**extract_scene_data.py** - for classifying a habitat from ProcTHOR-10k dataset. It will select next habitat with all 4 room types (**Kitchen**, **Living room**, **Bedroom**, **Bathroom**) from the training part of the dataset and then it will put the agent in random positions in that habitat and classify each random point belonging to a specific room- depending on objects observed around it.
+**harvest_data.py** - for extracting training data from AI2-THOR and ProcTHOR-10k dataset. It will go through ProcTHOR-10k habitats, place the agent at random positions and walk from there to the room centre taking pictures along the way. It will also store metrics in pickle files. The pickle files contain remaining path length at each step, next action to be taken and the relative URI of the images. It currently takes 3 images- the front view and two side views at 120 degrees away from the front view. Currently it only walks to the centre of the room, not yet to any defined object. The collected data is stored in **harvested_data** directory.
 
-**semantic_path_planner.py** - Uses the points classified by extract_scene_data.py to generate a path to an object of interest. It also plots the generated path on top of a top-view habitat image. I used this in the jupyter notebook "environment.ipynb" because running it from command line gave error: about xcb QT plugin that couldn't be started. I didn't have time to fix that, so ran it from jupyter notebook.
+**train_models.py** - Uses the data in the **harvested_data** directory, curates a custom PyTorch dataset, then creates a DataLoader, then sets up a neural network (currently just an insignificant CNN architecture without much thought) and feeds data into the neural network for training.
 
-Finally **analyse_classification_results.ipynb** is where I analyzed test results and generated box plots.
-**generate_and_evaluate_datasets.ipynb** is where I generated the SVC.
+This is comprises a starter code for my MSc students. The **training_data_extraction** package needs to be extended to navigate to other objects, not just the centre of the room. The **model_training** package needs to be extended to train whatever the task has requires- whether it's a classifier or a diffusion network or something else entirely.

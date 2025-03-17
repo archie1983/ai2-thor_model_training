@@ -19,4 +19,4 @@ To demonstrate our approach, there are two main scripts- both are very basic and
 
 **train_models.py** - Uses the data in the **harvested_data** directory, curates a custom PyTorch dataset, then creates a DataLoader, then sets up a neural network (currently just an insignificant CNN architecture without much thought) and feeds data into the neural network for training.
 
-This is comprises a starter code for my MSc students. The **training_data_extraction** package needs to be extended to navigate to other objects, not just the centre of the room. The **model_training** package needs to be extended to train whatever the task has requires- whether it's a classifier or a diffusion network or something else entirely.
+This comprises a starter code for my MSc students. The **training_data_extraction** package needs to be extended to navigate to other objects, not just the centre of the room. The **model_training** package needs to be extended to train whatever the task requires- whether it's a classifier or a diffusion network or something else entirely.

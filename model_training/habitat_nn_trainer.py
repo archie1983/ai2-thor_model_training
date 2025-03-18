@@ -7,18 +7,24 @@ from . import HabitatNeuralNetwork, HabitatDataLoading
 # and then we train.
 ##
 class HabitatNNTrainer():
-    def __init__(self, architecture_id, batch_size = 10, data_split = [0.9, 0.1], min_expl_size = 0):
+    def __init__(self, hp):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.architecture_id = architecture_id
+        self.hp = hp # hyper params
 
         # Load the data and split it in batches and training and test portions
-        dl = HabitatDataLoading(batch_size=batch_size, data_split=data_split)
+        dl = HabitatDataLoading(hp)
         (train_data_loader, test_data_loader) = dl.get_train_test_loaders()
         self.train_data_loader = train_data_loader
         self.test_data_loader = test_data_loader
 
         # Create the required architecture
-        self.model = HabitatNeuralNetwork(self.architecture_id)
+        self.model = HabitatNeuralNetwork(hp)
+
+        # Check if multiple GPUs are available
+        if torch.cuda.device_count() > 1:
+            print(f"Using {torch.cuda.device_count()} GPUs!")
+            self.model = nn.DataParallel(self.model)  # Wrap the model with DataParallel
+        self.model = self.model.to('cuda:0')
 
         # Loss function and optimizer
         self.loss_function = nn.CrossEntropyLoss()

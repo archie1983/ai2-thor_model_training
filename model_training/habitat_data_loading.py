@@ -4,7 +4,7 @@ from . import HabitatDataset
 import glob
 
 class HabitatDataLoading():
-    def __init__(self, batch_size = 10, data_split = [0.9, 0.1], min_expl_size = 3):
+    def __init__(self, hp):
         # Define the transform for preprocessing images
         self.transform = transforms.Compose([
             transforms.Resize((224, 224)),  # Resize images to 224x224
@@ -17,11 +17,11 @@ class HabitatDataLoading():
         image_dir = 'harvested_data'
 
         # Create the dataset
-        dataset = HabitatDataset(h_pkl_files, image_dir, transform=self.transform, min_expl_size = 3)
+        dataset = HabitatDataset(h_pkl_files, hp, image_dir, transform=self.transform)
 
-        train_dataset, test_dataset = random_split(dataset, data_split)
-        self.train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        self.test_data_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+        train_dataset, test_dataset = random_split(dataset, hp.data_split)
+        self.train_data_loader = DataLoader(train_dataset, batch_size=hp.batch_size, shuffle=True)
+        self.test_data_loader = DataLoader(test_dataset, batch_size=hp.batch_size, shuffle=True)
 
     def get_train_test_loaders(self):
         return (self.train_data_loader, self.test_data_loader)

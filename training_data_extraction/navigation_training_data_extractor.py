@@ -48,8 +48,8 @@ class NavigationTrainingDataExtractor:
         self.rooms_in_habitat = None
 
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
-        self.NUMBER_OF_HABITATS_IN_BATCH = 100
-        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 1000
+        self.NUMBER_OF_HABITATS_IN_BATCH = 300 # how many habitats in one go do we want to explore
+        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 1000 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
 
         ## figure out where are we running- in terminal or jupyter
         if not self.is_running_in_jupyter():

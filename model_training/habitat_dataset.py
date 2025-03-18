@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 class HabitatDataset(Dataset):
-    def __init__(self, pickle_files, image_dir, transform=None, min_expl_size = 3):
+    def __init__(self, pickle_files, hp, image_dir, transform=None):
         """
         Args:
             pickle_files (list): List of paths to pickle files containing the data.
@@ -16,6 +16,8 @@ class HabitatDataset(Dataset):
         self.pickle_files = pickle_files
         self.image_dir = image_dir
         self.transform = transform
+
+        self.hp = hp # hyper params
 
         # Load all data from pickle files
         self.data = []
@@ -28,7 +30,7 @@ class HabitatDataset(Dataset):
                 for (expl_length, expl_steps) in hab_data: # go through it and disect each tuple (exploration)
 
                     # If exploration length doesn't satisfy us, we can skip it
-                    if expl_length < min_expl_size:
+                    if expl_length < hp.min_expl_size:
                         continue
                     #print(expl_length)
                     # Go through all exploration steps and append it to the dataset
@@ -45,16 +47,23 @@ class HabitatDataset(Dataset):
         action, path_length, image_paths = self.data[idx]
         #print("AE::::::", action, path_length, image_paths)
 
-        # Load images
         images = []
-        for img_path in image_paths:
-            img = Image.open(os.path.join(self.image_dir, img_path)).convert('RGB')
+        # If we only want to use front view, then we will not be stacking all images, but using just one
+        if self.hp.use_front_view_only:
+            img = Image.open(os.path.join(self.image_dir, image_paths[0])).convert('RGB') # only take one image
             if self.transform:
                 img = self.transform(img)
-            images.append(img)
+            images = img
+        else:
+            # Load images
+            for img_path in image_paths: # tale all images
+                img = Image.open(os.path.join(self.image_dir, img_path)).convert('RGB')
+                if self.transform:
+                    img = self.transform(img)
+                images.append(img)
 
-        # Stack images into a single tensor (assuming all images are the same size)
-        images = torch.stack(images)
+            # Stack images into a single tensor (assuming all images are the same size)
+            images = torch.stack(images)
 
         # Convert action to a tensor (you may need to map actions to integers)
         action_tensor = torch.tensor(self._action_to_index(action), dtype=torch.long)

@@ -17,4 +17,5 @@ class HyperParameters():
         self.data_split = data_split
         self.min_expl_size = min_expl_size
         self.use_front_view_only = use_front_view_only
+        self.USE_DISTRIBUTED_SAMPLER = False
 

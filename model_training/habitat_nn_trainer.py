@@ -1,5 +1,9 @@
 import torch
 from torch import nn
+
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 from . import HabitatNeuralNetwork, HabitatDataLoading
 
 ##
@@ -11,12 +15,6 @@ class HabitatNNTrainer():
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.hp = hp # hyper params
 
-        # Load the data and split it in batches and training and test portions
-        dl = HabitatDataLoading(hp)
-        (train_data_loader, test_data_loader) = dl.get_train_test_loaders()
-        self.train_data_loader = train_data_loader
-        self.test_data_loader = test_data_loader
-
         # Create the required architecture
         self.model = HabitatNeuralNetwork(hp)
 
@@ -24,7 +22,23 @@ class HabitatNNTrainer():
         if torch.cuda.device_count() > 1:
             print(f"Using {torch.cuda.device_count()} GPUs!")
             self.model = nn.DataParallel(self.model)  # Wrap the model with DataParallel
-        self.model = self.model.to('cuda:0')
+
+            if hp.USE_DISTRIBUTED_SAMPLER:
+                # Initialize the distributed environment
+                dist.init_process_group(backend='nccl')
+
+            # make sure model is on the GPU
+            self.model = self.model.to(self.device)
+
+            if hp.USE_DISTRIBUTED_SAMPLER:
+                # Wrap the model with DDP
+                self.model = DDP(self.model, device_ids=[self.device])
+
+        # Load the data and split it in batches and training and test portions
+        dl = HabitatDataLoading(hp)
+        (train_data_loader, test_data_loader) = dl.get_train_test_loaders()
+        self.train_data_loader = train_data_loader
+        self.test_data_loader = test_data_loader
 
         # Loss function and optimizer
         self.loss_function = nn.CrossEntropyLoss()
@@ -32,8 +46,6 @@ class HabitatNNTrainer():
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.001)
         # self.optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-        # make sure model is on the GPU
-        self.model.to(self.device)
         ## Print the model for debug purposes
         print(self.model)
 

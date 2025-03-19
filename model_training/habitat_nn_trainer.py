@@ -5,7 +5,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from . import HabitatNeuralNetwork, HabitatDataLoading
-import time
+from time import time
 
 ##
 # This is where we define loss function, loss rate, decide on which architecture we want,

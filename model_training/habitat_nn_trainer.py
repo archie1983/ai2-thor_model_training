@@ -172,7 +172,7 @@ class HabitatNNTrainer():
     ##
     # Function to load previously saved model, optimizer, loss, epoch and hyperparams
     ##
-    def load_model(model, optimizer, load_path):
+    def load_model(self, model, optimizer, load_path):
         checkpoint = torch.load(load_path)
         self.hp = checkpoint['hyperparams']
 

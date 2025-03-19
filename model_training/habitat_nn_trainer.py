@@ -69,6 +69,7 @@ class HabitatNNTrainer():
     def train(self):
         size = len(self.train_data_loader.dataset) # how many images we have in total that we'll go through
         batch_counter = 0
+        start_time = time() # we'll want to know how fast we are
 
         # Iterate through the DataLoader
         for images, actions, path_lengths in self.train_data_loader:
@@ -91,13 +92,14 @@ class HabitatNNTrainer():
             self.optimizer.step()
 
             # Every so many batches, tell me what is the current loss
-            if (batch_counter % 20) == 0:
+            if (batch_counter % 100) == 0:
                 # print(i)
                 # what is the latest loss and how many images have we processed
                 loss, current = loss.item(), batch_counter * len(images)
                 # print(str(i), str(batch))
+                time_spent = time() - start_time
                 # print it pretty
-                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}], t= {time_spent}")
                 self.current_loss = loss
 
             # update batch counter
@@ -203,9 +205,12 @@ class HabitatNNTrainer():
             from_step = 0
 
         for t in range(from_step, epochs):
+            epoch_start_time = time()
             print(f"Epoch {t + 1}\n-------------------------------")
             self.current_epoch = t
             self.train()
             self.test()
             self.save_model(self.model, self.optimizer, "epoch_" + str(self.current_epoch) + ".pth")
+            epoch_run_time = time() - epoch_start_time
+            print(f"Epoch ran for: {epoch_run_time} s")
         print("Done!")

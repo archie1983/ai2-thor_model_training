@@ -99,7 +99,7 @@ class HabitatNNTrainer():
                 # print(str(i), str(batch))
                 time_spent = time() - start_time
                 # print it pretty
-                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}], t= {time_spent}")
+                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}], t= {time_spent:>0.1f}s")
                 self.current_loss = loss
 
             # update batch counter
@@ -212,5 +212,5 @@ class HabitatNNTrainer():
             self.test()
             self.save_model(self.model, self.optimizer, "epoch_" + str(self.current_epoch) + ".pth")
             epoch_run_time = time() - epoch_start_time
-            print(f"Epoch ran for: {epoch_run_time} s")
+            print(f"Epoch ran for: {epoch_run_time:>0.1f}s")
         print("Done!")

@@ -12,6 +12,6 @@ hp2 = HyperParameters(architecture_id = 2,
                      min_expl_size = 0,
                      use_front_view_only = True)
 
-hnt = HabitatNNTrainer(hp1)
+hnt = HabitatNNTrainer(hp2)
 #hnt = HabitatNNTrainer(hp, load_saved = True, pth_path = 'checkpoint.pth')
 hnt.do_epochs(5)

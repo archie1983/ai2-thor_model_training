@@ -20,6 +20,7 @@ class HabitatDataLoading():
         # Create the dataset
         dataset = HabitatDataset(h_pkl_files, hp, image_dir, transform=self.transform)
 
+        ## If we want to use distributed sampler, then DataLoader will require a sampler
         if hp.USE_DISTRIBUTED_SAMPLER:
             # Use a DistributedSampler to split the data
             train_sampler = DistributedSampler(dataset)

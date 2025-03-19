@@ -5,13 +5,14 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from . import HabitatNeuralNetwork, HabitatDataLoading
+import time
 
 ##
 # This is where we define loss function, loss rate, decide on which architecture we want,
 # and then we train.
 ##
 class HabitatNNTrainer():
-    def __init__(self, hp):
+    def __init__(self, hp, load_saved = False, pth_path = ''):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.hp = hp # hyper params
 
@@ -20,9 +21,12 @@ class HabitatNNTrainer():
 
         # Check if multiple GPUs are available
         if torch.cuda.device_count() > 1:
-            print(f"Using {torch.cuda.device_count()} GPUs!")
-            self.model = nn.DataParallel(self.model)  # Wrap the model with DataParallel
+            ## If we want to use all GPUs there are
+            if hp.USE_PARALLEL_GPUS:
+                print(f"Using {torch.cuda.device_count()} GPUs!")
+                self.model = nn.DataParallel(self.model)  # Wrap the model with DataParallel
 
+            ## If we want to use distributed sampler
             if hp.USE_DISTRIBUTED_SAMPLER:
                 # Initialize the distributed environment
                 dist.init_process_group(backend='nccl')
@@ -45,6 +49,15 @@ class HabitatNNTrainer():
         # optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.8)
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.001)
         # self.optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+        # epoch and loss
+        self.current_epoch = 0
+        self.current_loss = 0
+
+        # if we want to load saved checkpoint, then we will now overwrite hyperparams along with
+        # model, optimizer, current loss and current epoch
+        if load_saved:
+            (self.model, self.optimizer) = self.load_model(self.model, self.optimizer, pth_path)
 
         ## Print the model for debug purposes
         print(self.model)
@@ -85,6 +98,7 @@ class HabitatNNTrainer():
                 # print(str(i), str(batch))
                 # print it pretty
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+                self.current_loss = loss
 
             # update batch counter
             batch_counter += 1
@@ -130,13 +144,68 @@ class HabitatNNTrainer():
             correct /= size
             # print it pretty
             print(f"Test Error: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+            self.current_loss = test_loss
+
+    ##
+    # Function for saving a model at any given time. Not just model- the optimizer
+    # state too and even number of completed epochs and current loss
+    ##
+    def save_model(self, model, optimizer, save_path):
+        # Check if using DDP/DataParallel
+        if self.hp.USE_PARALLEL_GPUS or self.hp.USE_DISTRIBUTED_SAMPLER:
+            model_state = model.module.state_dict()  # Unwrap DDP/DataParallel
+        else:
+            model_state = model.state_dict()  # Single GPU
+
+        checkpoint = {
+            'epoch': self.current_epoch,
+            'model_state_dict': model_state,
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': self.current_loss,
+            'hyperparams': self.hp
+        }
+        torch.save(checkpoint, save_path)
+        print(f"Model saved to {save_path}!")
+
+    ##
+    # Function to load previously saved model, optimizer, loss, epoch and hyperparams
+    ##
+    def load_model(model, optimizer, load_path):
+        checkpoint = torch.load(load_path)
+        self.hp = checkpoint['hyperparams']
+
+        # Load model state (handle DDP/DataParallel if needed)
+        if self.hp.USE_PARALLEL_GPUS or self.hp.USE_DISTRIBUTED_SAMPLER:
+            model.module.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            model.load_state_dict(checkpoint['model_state_dict'])
+
+        # Load optimizer and training state (optional)
+        if optimizer is not None:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        # Update hyperparameters
+        self.current_epoch = checkpoint['epoch']
+        self.current_loss = checkpoint['loss']
+
+        print("Loaded ", load_path, " current loss: ", self.current_loss, " current epoch: ", self.current_epoch)
+
+        return model, optimizer
 
     ##
     # Run all the epochs that we want. One epoch is when we go through all the batches.
     ##
     def do_epochs(self, epochs=50):
-        for t in range(epochs):
+        # if state was saved before and we want to start from some epoch
+        if self.current_epoch > 0:
+            from_step = self.current_epoch
+        else:
+            from_step = 0
+
+        for t in range(from_step, epochs):
             print(f"Epoch {t + 1}\n-------------------------------")
+            self.current_epoch = t
             self.train()
             self.test()
+            self.save_model(self.model, self.optimizer, "epoch_" + str(self.current_epoch) + ".pth")
         print("Done!")

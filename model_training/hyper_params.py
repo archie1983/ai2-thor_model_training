@@ -17,5 +17,8 @@ class HyperParameters():
         self.data_split = data_split
         self.min_expl_size = min_expl_size
         self.use_front_view_only = use_front_view_only
+        
+        # Below are parameters that we keep settable only here and not withing code. This can change, but I thought that it's unlikely
+        # we would want to often change these parameters.
         self.USE_DISTRIBUTED_SAMPLER = False
-
+        self.USE_PARALLEL_GPUS = True

@@ -46,18 +46,18 @@ class HabitatNeuralNetwork(nn.Module):
             )
         elif (arch_id == 2):
             lrs = nn.Sequential(
-                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=5, stride=1, padding='same', dilation=1, groups=1,
+                nn.Conv2d(in_channels=3, out_channels=16, kernel_size=5, stride=1, padding='same', dilation=1, groups=1,
                           bias=True, padding_mode='zeros'),
                 nn.MaxPool2d(5, stride=1),
-                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, stride=1, padding='same', dilation=1,
+                nn.Conv2d(in_channels=16, out_channels=16, kernel_size=5, stride=1, padding='same', dilation=1,
                           groups=1, bias=True, padding_mode='zeros'),
                 nn.MaxPool2d(5, stride=1),
-                nn.Conv2d(in_channels=64, out_channels=64, kernel_size=5, stride=1, padding='same', dilation=1,
-                          groups=1, bias=True, padding_mode='zeros'),
-                nn.MaxPool2d(5, stride=1),
+#                nn.Conv2d(in_channels=32, out_channels=32, kernel_size=5, stride=1, padding='same', dilation=1,
+#                          groups=1, bias=True, padding_mode='zeros'),
+#                nn.MaxPool2d(5, stride=1),
                 nn.Dropout(p=0.2),
                 nn.Flatten(),
-                nn.Linear(2876416, 512),
+                nn.Linear(746496, 512),
                 nn.Sigmoid(),
                 nn.Linear(512, 24),
             )

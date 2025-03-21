@@ -59,7 +59,7 @@ class HabitatNeuralNetwork(nn.Module):
                 nn.Flatten(),
                 nn.Linear(746496, 512),
                 nn.Sigmoid(),
-                nn.Linear(512, 24),
+                nn.Linear(512, 4),
             )
 
         return lrs

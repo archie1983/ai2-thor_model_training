@@ -13,5 +13,5 @@ hp2 = HyperParameters(architecture_id = 2,
                      use_front_view_only = True)
 
 #hnt = HabitatNNTrainer(hp2)
-hnt = HabitatNNTrainer(hp2, load_saved = True, pth_path = 'epoch_14.pth')
-hnt.do_epochs(30)
+hnt = HabitatNNTrainer(hp2, load_saved = True, pth_path = 'epoch_0.pth')
+hnt.do_epochs(15)

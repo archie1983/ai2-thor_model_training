@@ -99,7 +99,7 @@ class HabitatNNTrainer():
                 # print(str(i), str(batch))
                 time_spent = time() - start_time
                 # print it pretty
-                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}], t= {time_spent}")
+                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}], t= {time_spent:>0.1f}")
                 self.current_loss = loss
 
             # update batch counter
@@ -172,7 +172,7 @@ class HabitatNNTrainer():
     ##
     # Function to load previously saved model, optimizer, loss, epoch and hyperparams
     ##
-    def load_model(model, optimizer, load_path):
+    def load_model(self, model, optimizer, load_path):
         checkpoint = torch.load(load_path)
         self.hp = checkpoint['hyperparams']
 
@@ -217,5 +217,5 @@ class HabitatNNTrainer():
             # after each epoch save the model. This could be improved, i.e. only save model if it's better than last one.
             self.save_model(self.model, self.optimizer, "epoch_" + str(self.current_epoch) + ".pth")
             epoch_run_time = time() - epoch_start_time
-            print(f"Epoch ran for: {epoch_run_time} s")
+            print(f"Epoch ran for: {epoch_run_time:>0.1f} s")
         print("Done!")

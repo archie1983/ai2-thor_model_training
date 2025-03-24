@@ -37,6 +37,9 @@ class HabitatNNTrainer():
             if hp.USE_DISTRIBUTED_SAMPLER:
                 # Wrap the model with DDP
                 self.model = DDP(self.model, device_ids=[self.device])
+        else:
+            # make sure model is on the GPU
+            self.model = self.model.to(self.device)
 
         # Load the data and split it in batches and training and test portions
         dl = HabitatDataLoading(hp)

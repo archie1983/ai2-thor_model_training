@@ -23,7 +23,15 @@ This comprises a starter code for my MSc students. The **training_data_extractio
 
 Please use the environment.yml file to create the required conda environment to run this software in.
 
-Model training package:
+## Training Data Extraction Package: ##
+* ae_robot_simulation_control.py : This is where we move robot around in simulation, execute action plans (planned paths) and take pictures at each step.
+* navigation_training_data_extractor.py : This is where we go through all habitats, plan paths and then use ae_robot_simulation_control to walk through them.
+* scene_data_management.py : This is where we start and stop habitat explorations. We also organise pkl files here.
+* ai2_thor_utils.py : Various utility functions that we need in order to interact with AI2-THOR the way we do.
+* room_type.py : An enum to differentiate room types. It has some more functionality than needed because it was borrowed from a different project. This could be cleaned up, but for now it doesn't bother anyone.
+* data_load_error.py : An error that we can throw if data loading fails in one way or another.
+
+## Model training package: ##
 * habitat_dataset.py : This is where we go throuh all the generated pkl files and stored images and prepare training data out of them in a PyTorch set.
 * habitat_data_loading.py : This is where take the PyTorch set from habitat_dataset.py and turn it into a PyTorch DataLoader object. We also apply an image transform- normalization really and stacking the images if we have more than one, but that may well change.
 * habitat_neural_network.py : This is where we define our neural network architectures that we may want to experiment with. Also forward pass function lives here.

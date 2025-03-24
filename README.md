@@ -22,3 +22,10 @@ To demonstrate our approach, there are two main scripts- both are very basic and
 This comprises a starter code for my MSc students. The **training_data_extraction** package needs to be extended to navigate to other objects, not just the centre of the room. The **model_training** package needs to be extended to train whatever the task requires- whether it's a classifier or a diffusion network or something else entirely.
 
 Please use the environment.yml file to create the required conda environment to run this software in.
+
+Model training package:
+* habitat_dataset.py : This is where we go throuh all the generated pkl files and stored images and prepare training data out of them in a PyTorch set.
+* habitat_data_loading.py : This is where take the PyTorch set from habitat_dataset.py and turn it into a PyTorch DataLoader object. We also apply an image transform- normalization really and stacking the images if we have more than one, but that may well change.
+* habitat_neural_network.py : This is where we define our neural network architectures that we may want to experiment with. Also forward pass function lives here.
+* habitat_nn_trainer.py : This is where we train and test our model and do epochs of training. We also have model saving and loading functions here.
+* hyper_params.py : This is a structure for hyper parameters. We can instantiate this class with various parameters to have different sets of hyper parameters.

@@ -37,9 +37,6 @@ class HabitatNNTrainer():
             if hp.USE_DISTRIBUTED_SAMPLER:
                 # Wrap the model with DDP
                 self.model = DDP(self.model, device_ids=[self.device])
-        else:
-            # make sure model is on the GPU
-            self.model = self.model.to(self.device)
 
         # Load the data and split it in batches and training and test portions
         dl = HabitatDataLoading(hp)
@@ -102,7 +99,7 @@ class HabitatNNTrainer():
                 # print(str(i), str(batch))
                 time_spent = time() - start_time
                 # print it pretty
-                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}], t= {time_spent:>0.1f}s")
+                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}], t= {time_spent}")
                 self.current_loss = loss
 
             # update batch counter
@@ -175,7 +172,7 @@ class HabitatNNTrainer():
     ##
     # Function to load previously saved model, optimizer, loss, epoch and hyperparams
     ##
-    def load_model(self, model, optimizer, load_path):
+    def load_model(model, optimizer, load_path):
         checkpoint = torch.load(load_path)
         self.hp = checkpoint['hyperparams']
 
@@ -192,6 +189,10 @@ class HabitatNNTrainer():
         # Update hyperparameters
         self.current_epoch = checkpoint['epoch']
         self.current_loss = checkpoint['loss']
+
+        # We loaded the epoch counter that was correct when the model was saved.
+        # But now we will be starting a new epoch and it must be +1.
+        self.current_epoch += 1
 
         print("Loaded ", load_path, " current loss: ", self.current_loss, " current epoch: ", self.current_epoch)
 
@@ -213,7 +214,8 @@ class HabitatNNTrainer():
             self.current_epoch = t
             self.train()
             self.test()
+            # after each epoch save the model. This could be improved, i.e. only save model if it's better than last one.
             self.save_model(self.model, self.optimizer, "epoch_" + str(self.current_epoch) + ".pth")
             epoch_run_time = time() - epoch_start_time
-            print(f"Epoch ran for: {epoch_run_time:>0.1f}s")
+            print(f"Epoch ran for: {epoch_run_time} s")
         print("Done!")

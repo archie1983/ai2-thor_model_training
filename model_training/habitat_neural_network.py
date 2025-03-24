@@ -10,13 +10,12 @@ class HabitatNeuralNetwork(nn.Module):
     def __init__(self, hp):
         super(HabitatNeuralNetwork, self).__init__()
         self.hp = hp
-        self.flatten = nn.Flatten() # we'll need this to run data through before we can pass it to linear relu stack
-        self.linear_relu_stack = self.get_linear_relu_stack(hp.architecture_id)
+        self.neural_network = self.get_neural_network(hp.architecture_id)
 
     ##
     # Now the rest of the network- the architecture to achieve nice gradient descent
     ##
-    def get_linear_relu_stack(self, arch_id):
+    def get_neural_network(self, arch_id):
         if (arch_id == 0):
             lrs = nn.Sequential(
                 nn.Flatten(),
@@ -69,5 +68,5 @@ class HabitatNeuralNetwork(nn.Module):
     # logits values.
     ##
     def forward(self, x):
-        logits = self.linear_relu_stack(x)
+        logits = self.neural_network(x)
         return logits

@@ -5,14 +5,16 @@ from model_compression_toolkit.exporter import pytorch_export_model
 
 #from model_compression_toolkit import ptq
 #from model_compression_toolkit.core import CoreConfig
-from model_compression_toolkit import DefaultDict
+#from model_compression_toolkit import DefaultDict
 #from model_compression_toolkit.core import QuantizationConfig
 
-from model_compression_toolkit import ptq
-from model_compression_toolkit.core import CoreConfig, TargetPlatform, TargetPlatformModel, QuantizationMethod
-from model_compression_toolkit.core.tpc_models.default_tpc.latest import get_op_quantization_configs
+#from model_compression_toolkit import ptq
+#from model_compression_toolkit.core import CoreConfig, TargetPlatform, TargetPlatformModel, QuantizationMethod
+#from model_compression_toolkit.core.tpc_models.default_tpc.latest import get_op_quantization_configs
 
+import model_compression_toolkit as mct
 import torch
+import numpy as np
 
 class ModelCompressor():
     def __init__(self):
@@ -35,32 +37,39 @@ class ModelCompressor():
         dl = HabitatDataLoading(self.hp)
         (self.train_data_loader, self.test_data_loader) = dl.get_train_test_loaders()
 
+        # Get a FrameworkQuantizationCapabilities object that models the hardware platform for the quantized model inference. Here, for example, we use the default platform that is attached to a Pytorch layers representation.
+        target_platform_cap = mct.get_target_platform_capabilities('pytorch', 'imx500')
 
-
-
-        # Define Target Platform Model (TPM)
-        tp_model = TargetPlatformModel()
-        op_quant_config = get_op_quantization_configs(tp_model)
-
-        # Configure 8-bit symmetric quantization
-        op_quant_config.default_qco = op_quant_config.default_qco.clone_and_edit(
-            weights_quantization_method=QuantizationMethod.SYMMETRIC,
-            activation_quantization_method=QuantizationMethod.SYMMETRIC,
-            weights_n_bits=8,
-            activation_n_bits=8,
+        self.quantized_model, quantization_info = mct.ptq.pytorch_post_training_quantization(
+                in_module=self.full_model,
+                representative_data_gen=self.representative_data_gen,
+                target_platform_capabilities=target_platform_cap
         )
 
-        tpc = TargetPlatform(tp_model, name='8bit_quant')
-        core_config = CoreConfig()
-
-        # Run PTQ
-        quantized_model, _ = ptq.pytorch_post_training_quantization_experimental(
-            model=self.full_model,
-            representative_data_gen=self.representative_data_gen,
-            core_config=core_config,
-            target_platform_capabilities=tpc,
-        )
-
+#########################
+#        # Define Target Platform Model (TPM)
+#        tp_model = TargetPlatformModel()
+#        op_quant_config = get_op_quantization_configs(tp_model)
+#
+#        # Configure 8-bit symmetric quantization
+#        op_quant_config.default_qco = op_quant_config.default_qco.clone_and_edit(
+#            weights_quantization_method=QuantizationMethod.SYMMETRIC,
+#            activation_quantization_method=QuantizationMethod.SYMMETRIC,
+#            weights_n_bits=8,
+#            activation_n_bits=8,
+#        )
+#
+#        tpc = TargetPlatform(tp_model, name='8bit_quant')
+#        core_config = CoreConfig()
+#
+#        # Run PTQ
+#        quantized_model, _ = ptq.pytorch_post_training_quantization_experimental(
+#            model=self.full_model,
+#            representative_data_gen=self.representative_data_gen,
+#            core_config=core_config,
+#            target_platform_capabilities=tpc,
+#        )
+############################
 
 #        # Configure quantization
 #        quant_config = QuantizationConfig(
@@ -89,7 +98,7 @@ class ModelCompressor():
             model=self.quantized_model,
             save_model_path="quantized_model.onnx",
             repr_dataset=self.representative_data_gen,
-            target_platform=DefaultDict(),
+#            target_platform=DefaultDict(),
         )
 
         self.validate_compressed_model()

@@ -3,10 +3,14 @@ from model_training import HabitatNeuralNetwork, HabitatDataLoading, HabitatNNTr
 #from model_compression_toolkit import CoreConfig, QuantizationConfig, DefaultDict, ptq
 from model_compression_toolkit.exporter import pytorch_export_model
 
-from model_compression_toolkit import ptq
-from model_compression_toolkit.core import CoreConfig
+#from model_compression_toolkit import ptq
+#from model_compression_toolkit.core import CoreConfig
 from model_compression_toolkit import DefaultDict
-from model_compression_toolkit.core import QuantizationConfig
+#from model_compression_toolkit.core import QuantizationConfig
+
+from model_compression_toolkit import ptq
+from model_compression_toolkit.core import CoreConfig, TargetPlatform, TargetPlatformModel, QuantizationMethod
+from model_compression_toolkit.core.tpc_models.default_tpc.latest import get_op_quantization_configs
 
 import torch
 
@@ -31,27 +35,54 @@ class ModelCompressor():
         dl = HabitatDataLoading(self.hp)
         (self.train_data_loader, self.test_data_loader) = dl.get_train_test_loaders()
 
-        # Configure quantization
-        quant_config = QuantizationConfig(
-            n_bits=8,          # Quantize activations to 8-bit
-            #weights_bits=8,             # Quantize weights to 8-bit
-            weights_per_channel_threshold=True,  # Per-channel quantization
-            enable_weights_quantization=True,
-            enable_activation_quantization=True,
+
+
+
+        # Define Target Platform Model (TPM)
+        tp_model = TargetPlatformModel()
+        op_quant_config = get_op_quantization_configs(tp_model)
+
+        # Configure 8-bit symmetric quantization
+        op_quant_config.default_qco = op_quant_config.default_qco.clone_and_edit(
+            weights_quantization_method=QuantizationMethod.SYMMETRIC,
+            activation_quantization_method=QuantizationMethod.SYMMETRIC,
+            weights_n_bits=8,
+            activation_n_bits=8,
         )
 
-        core_config = CoreConfig(
-            quantization_config=quant_config,
-            # Add pruning config here if needed
-        )
+        tpc = TargetPlatform(tp_model, name='8bit_quant')
+        core_config = CoreConfig()
 
-        # Compress the model
-        self.quantized_model, _ = ptq.pytorch_post_training_quantization_experimental(
+        # Run PTQ
+        quantized_model, _ = ptq.pytorch_post_training_quantization_experimental(
             model=self.full_model,
             representative_data_gen=self.representative_data_gen,
             core_config=core_config,
-            target_platform_capabilities=DefaultDict()  # Use default target platform
+            target_platform_capabilities=tpc,
         )
+
+
+#        # Configure quantization
+#        quant_config = QuantizationConfig(
+#            n_bits=8,          # Quantize activations to 8-bit
+#            #weights_bits=8,             # Quantize weights to 8-bit
+#            weights_per_channel_threshold=True,  # Per-channel quantization
+#            enable_weights_quantization=True,
+#            enable_activation_quantization=True,
+#        )
+#
+#        core_config = CoreConfig(
+#            quantization_config=quant_config,
+#            # Add pruning config here if needed
+#        )
+#
+#        # Compress the model
+#        self.quantized_model, _ = ptq.pytorch_post_training_quantization_experimental(
+#            model=self.full_model,
+#            representative_data_gen=self.representative_data_gen,
+#            core_config=core_config,
+#            target_platform_capabilities=DefaultDict()  # Use default target platform
+#        )
 
         # Export to ONNX
         pytorch_export_model(

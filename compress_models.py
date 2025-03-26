@@ -1,6 +1,14 @@
-from model_training import HabitatNeuralNetwork, HabitatDataLoading, HabitatNNTrainer
-from model_compression_toolkit import CoreConfig, QuantizationConfig, DefaultDict, ptq
+from model_training import HabitatNeuralNetwork, HabitatDataLoading, HabitatNNTrainer, HyperParameters
+
+#from model_compression_toolkit import CoreConfig, QuantizationConfig, DefaultDict, ptq
 from model_compression_toolkit.exporter import pytorch_export_model
+
+from model_compression_toolkit import ptq
+from model_compression_toolkit.core import CoreConfig
+from model_compression_toolkit import DefaultDict
+from model_compression_toolkit.core import QuantizationConfig
+
+import torch
 
 class ModelCompressor():
     def __init__(self):
@@ -14,19 +22,19 @@ class ModelCompressor():
         # create the model
         #self.model = HabitatNeuralNetwork(hp)
         # Load the model from a saved epoch instead of creating here
-        hnt = HabitatNNTrainer(self.hp, load_saved = True, pth_path = 'epoch_0.pth')
+        hnt = HabitatNNTrainer(self.hp, load_saved = True, pth_path = 'epoch_4.pth')
 
         # put it in eval mode. This now is our full, un-compressed model
         self.full_model = hnt.model.eval()
 
         # Load the data and split it in batches and training and test portions
-        dl = HabitatDataLoading(hp)
+        dl = HabitatDataLoading(self.hp)
         (self.train_data_loader, self.test_data_loader) = dl.get_train_test_loaders()
 
         # Configure quantization
         quant_config = QuantizationConfig(
-            activation_n_bits=8,          # Quantize activations to 8-bit
-            weights_n_bits=8,             # Quantize weights to 8-bit
+            n_bits=8,          # Quantize activations to 8-bit
+            #weights_bits=8,             # Quantize weights to 8-bit
             weights_per_channel_threshold=True,  # Per-channel quantization
             enable_weights_quantization=True,
             enable_activation_quantization=True,
@@ -88,3 +96,6 @@ class ModelCompressor():
                 # Break when required number of samples has been provided
                 cnt += 1
                 if cnt > max_samples: break
+
+if __name__ == "__main__":
+    compressor = ModelCompressor()

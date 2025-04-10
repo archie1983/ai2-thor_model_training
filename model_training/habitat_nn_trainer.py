@@ -56,6 +56,7 @@ class HabitatNNTrainer():
         # epoch and loss
         self.current_epoch = 0
         self.current_loss = 0
+        self.current_accuracy = 0
 
         # if we want to load saved checkpoint, then we will now overwrite hyperparams along with
         # model, optimizer, current loss and current epoch
@@ -150,6 +151,7 @@ class HabitatNNTrainer():
             # print it pretty
             print(f"Test Error: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
             self.current_loss = test_loss
+            self.current_accuracy = correct
 
     ##
     # Function for saving a model at any given time. Not just model- the optimizer
@@ -212,13 +214,22 @@ class HabitatNNTrainer():
             from_step = 0
 
         for t in range(from_step, epochs):
+            # take note of the current accuracy and loss which we will
+            # compare later with the new accuracy and loss to decide if
+            # we want to store the weights.
+            prev_loss = self.current_loss
+            prev_accuracy = self.current_accuracy
+
+            # take time of the epoch start to know how long it took later
             epoch_start_time = time()
             print(f"Epoch {t + 1}\n-------------------------------")
             self.current_epoch = t
             self.train()
             self.test()
-            # after each epoch save the model. This could be improved, i.e. only save model if it's better than last one.
-            self.save_model(self.model, self.optimizer, "epoch_" + str(self.current_epoch) + ".pth")
+            # After each epoch evaluate if both accuracy and loss have improved. If they have, then save the model.
+            if self.current_accuracy > prev_accuracy and self.current_loss < prev_loss:
+                self.save_model(self.model, self.optimizer, "best_epoch_" + str(self.current_epoch) + ".pth")
+
             epoch_run_time = time() - epoch_start_time
             print(f"Epoch ran for: {epoch_run_time:>0.1f} s")
         print("Done!")

@@ -213,13 +213,8 @@ class HabitatNNTrainer():
         else:
             from_step = 0
 
+        prev_best_accuracy = 0
         for t in range(from_step, epochs):
-            # take note of the current accuracy and loss which we will
-            # compare later with the new accuracy and loss to decide if
-            # we want to store the weights.
-            prev_loss = self.current_loss
-            prev_accuracy = self.current_accuracy
-
             # take time of the epoch start to know how long it took later
             epoch_start_time = time()
             print(f"Epoch {t + 1}\n-------------------------------")
@@ -227,8 +222,9 @@ class HabitatNNTrainer():
             self.train()
             self.test()
             # After each epoch evaluate if both accuracy and loss have improved. If they have, then save the model.
-            if self.current_accuracy > prev_accuracy and self.current_loss < prev_loss:
-                self.save_model(self.model, self.optimizer, "best_epoch_" + str(self.current_epoch) + ".pth")
+            if self.current_accuracy > prev_best_accuracy:
+                prev_best_accuracy = self.current_accuracy
+                self.save_model(self.model, self.optimizer, "best_epoch_" + str(self.current_accuracy) + ".pth")
 
             epoch_run_time = time() - epoch_start_time
             print(f"Epoch ran for: {epoch_run_time:>0.1f} s")

@@ -17,6 +17,7 @@ class HyperParameters():
         self.data_split = data_split
         self.min_expl_size = min_expl_size
         self.use_front_view_only = use_front_view_only
+        self.seed = 21011983 # the same constant random seed to make sure that DataLoader splits data between test and train datasets the same way every time
         
         # Below are parameters that we keep settable only here and not withing code. This can change, but I thought that it's unlikely
         # we would want to often change these parameters.

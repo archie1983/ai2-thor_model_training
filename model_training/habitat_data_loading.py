@@ -1,21 +1,19 @@
 from torch.utils.data import DataLoader, random_split, Subset
 from torch.utils.data.distributed import DistributedSampler
-from torchvision import transforms
-from . import HabitatDataset
+from . import HabitatDataset, habitat_pics_transform
 import glob, os, json, torch
 import numpy as np
 
 class HabitatDataLoading():
     def __init__(self, hp):
+        # Set seed with fallback to 21011983 if not specified
+        if not hasattr(hp, 'seed'):
+            setattr(hp, 'seed', 21011983)
         # Set random seeds for reproducibility
         self._set_seeds(hp.seed)
 
         # Define transforms
-        self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
+        self.transform = habitat_pics_transform
 
         # Create dataset
         h_pkl_files = glob.glob("harvested_data/*.pkl")

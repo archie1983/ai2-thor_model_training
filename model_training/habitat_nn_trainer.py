@@ -4,7 +4,7 @@ from torch import nn
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from . import HabitatNeuralNetwork, HabitatDataLoading
+from . import HabitatDataLoading, load_model_architecture
 from time import time
 
 ##
@@ -16,30 +16,9 @@ class HabitatNNTrainer():
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.hp = hp # hyper params
 
-        # Create the required architecture
-        self.model = HabitatNeuralNetwork(hp)
-
-        # Check if multiple GPUs are available
-        if torch.cuda.device_count() > 1:
-            ## If we want to use all GPUs there are
-            if hp.USE_PARALLEL_GPUS:
-                print(f"Using {torch.cuda.device_count()} GPUs!")
-                self.model = nn.DataParallel(self.model)  # Wrap the model with DataParallel
-
-            ## If we want to use distributed sampler
-            if hp.USE_DISTRIBUTED_SAMPLER:
-                # Initialize the distributed environment
-                dist.init_process_group(backend='nccl')
-
-            # make sure model is on the GPU
-            self.model = self.model.to(self.device)
-
-            if hp.USE_DISTRIBUTED_SAMPLER:
-                # Wrap the model with DDP
-                self.model = DDP(self.model, device_ids=[self.device])
-        else:
-            # make sure model is on the GPU
-            self.model = self.model.to(self.device)
+        # Load the required model architecture and put it either into GPU's VRAM or RAM depending
+        # on what is available. Also tweak the model to run on multiple GPUs if so specified in hp.
+        self.model = load_model_architecture(self.hp)
 
         # Load the data and split it in batches and training and test portions
         dl = HabitatDataLoading(hp)
@@ -175,10 +154,10 @@ class HabitatNNTrainer():
         print(f"Model saved to {save_path}!")
 
     ##
-    # Function to load previously saved model, optimizer, loss, epoch and hyperparams
+    # Function to load previously saved model with weights, optimizer, loss, epoch and hyperparams
     ##
     def load_model(self, model, optimizer, load_path):
-        checkpoint = torch.load(load_path)
+        checkpoint = torch.load(load_path, map_location=self.device)
         self.hp = checkpoint['hyperparams']
 
         # Load model state (handle DDP/DataParallel if needed)

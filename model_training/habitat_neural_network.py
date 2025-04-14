@@ -1,5 +1,4 @@
 from torch import nn
-import torch
 
 ##
 # Here we will be defining the architecture of our NN model.

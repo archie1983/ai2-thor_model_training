@@ -1,5 +1,7 @@
 import torch
-from model_training import HabitatDataLoading, load_model_architecture, habitat_pics_transform
+from numpy.ma.core import argmax
+
+from model_training import load_model_architecture, habitat_pics_transform, index_to_action
 from PIL import Image
 
 ##
@@ -45,6 +47,8 @@ class SceneAnalyzer():
             pred = self.model(images)
 
         print(pred)
+        print(argmax(pred))
+        print(index_to_action(argmax(pred)))
 
     ##
     # Turn image (or images) into a tensor that we can use in Pytorch
@@ -55,6 +59,8 @@ class SceneAnalyzer():
         if self.hp.use_front_view_only:
             img = Image.open(image_paths[0]).convert('RGB') # only take one image
             if self.transform:
+                # the .unsqueeze(0) bit adds batch dimensionality to the input, which is required by the net.
+                # e.g., the net expects input of [1, 3, 224, 224] geometry and not [3, 224, 224].
                 img = self.transform(img).unsqueeze(0)
             images_tensor = img
         else:
@@ -62,6 +68,8 @@ class SceneAnalyzer():
             for img_path in image_paths: # tale all images
                 img = Image.open(img_path).convert('RGB')
                 if self.transform:
+                    # the .unsqueeze(0) bit adds batch dimensionality to the input, which is required by the net.
+                    # e.g., the net expects input of [1, 3, 224, 224] geometry and not [3, 224, 224].
                     img = self.transform(img).unsqueeze(0)
                 images.append(img)
 

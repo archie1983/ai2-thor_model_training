@@ -3,7 +3,7 @@ import pickle
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
-from torchvision import transforms
+from . import action_to_index
 
 class HabitatDataset(Dataset):
     def __init__(self, pickle_files, hp, image_dir, transform=None):
@@ -66,23 +66,9 @@ class HabitatDataset(Dataset):
             images = torch.stack(images)
 
         # Convert action to a tensor (you may need to map actions to integers)
-        action_tensor = torch.tensor(self._action_to_index(action), dtype=torch.long)
+        action_tensor = torch.tensor(action_to_index(action), dtype=torch.long)
 
         # Convert path length to a tensor
         path_length_tensor = torch.tensor(path_length, dtype=torch.float32)
 
         return images, action_tensor, path_length_tensor
-
-    def _action_to_index(self, action):
-        """
-        Helper function to convert action strings to indices.
-        You can customize this based on your specific actions.
-        """
-        action_mapping = {
-            'RotateLeft': 0,
-            'RotateRight': 1,
-            'MoveAhead': 2,
-            'STOP': 3,
-            # Add more actions as needed
-        }
-        return action_mapping.get(action, -1)  # Return -1 for unknown actions

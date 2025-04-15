@@ -1,5 +1,3 @@
-import os
-import pickle
 import prior
 import random
 from IPython import get_ipython
@@ -20,7 +18,7 @@ from thortils.map3d import Mapper3D
 from thortils.utils.math import sep_spatial_sample
 import thortils as tt
 
-import matplotlib, sys
+import matplotlib
 import matplotlib.pyplot as plt
 
 from PIL import Image

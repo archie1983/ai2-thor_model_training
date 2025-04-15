@@ -78,6 +78,6 @@ class SceneAnalyzer():
 
         return images_tensor
 
-if __name__ == "__main__":
-    sa = SceneAnalyzer("accuracy_093.pth")
-    sa.next_best_move("harvested_data/h_7/expl_9/3.png")
+#if __name__ == "__main__":
+#    sa = SceneAnalyzer("accuracy_093.pth")
+#    sa.next_best_move("harvested_data/h_7/expl_9/3.png")

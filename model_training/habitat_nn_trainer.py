@@ -29,7 +29,7 @@ class HabitatNNTrainer():
         # Loss function and optimizer
         self.loss_function = nn.CrossEntropyLoss()
         # optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.8)
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.001)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=hp.learning_rate)
         # self.optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
         # epoch and loss

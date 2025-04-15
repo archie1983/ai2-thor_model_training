@@ -159,6 +159,13 @@ class RobotNavigationControl:
             frames.append(self.controller.step(action="RotateRight", degrees=5).frame)
             time.sleep(0.05)
 
+    # Move ahead by the given number of meters
+    def move_ahead(self, distance = 0.25):
+        frames = []
+        for _ in range(int(distance * 100) // 5):
+            frames.append(self.controller.step(action="MoveAhead", moveMagnitude=0.05).frame)
+            time.sleep(0.05)
+
     # Rotate right or left depending on the degree (positive degree- right, negative - left)
     def rotate_by_degree(self, deg):
         if (deg < 0):

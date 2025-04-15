@@ -37,8 +37,20 @@ class SceneAnalyzer():
     ##
     # This function will allow to infer the next best move given an image
     ##
-    def next_best_move(self, scene_img_url):
-        img_tensor = self.image_files_to_tensor([scene_img_url])
+    def next_best_move(self, scene_img_url = "", raw_img = None):
+        if raw_img == None and len(scene_img_url) > 0:
+            img_tensor = self.image_files_to_tensor([scene_img_url])
+        elif(raw_img != None and len(scene_img_url) == 0):
+            #img = Image.open(image_paths[0]).convert('RGB') # only take one image
+            img = raw_img.convert('RGB')
+            if self.transform:
+                # the .unsqueeze(0) bit adds batch dimensionality to the input, which is required by the net.
+                # e.g., the net expects input of [1, 3, 224, 224] geometry and not [3, 224, 224].
+                img = self.transform(img).unsqueeze(0)
+            img_tensor = img
+        else:
+            print("Either image URI or a raw image must be provided, but not both and not none.")
+            return
 
         with torch.no_grad():
             # make sure our data is on GPU
@@ -49,6 +61,8 @@ class SceneAnalyzer():
         print(pred)
         print(argmax(pred))
         print(index_to_action(argmax(pred)))
+
+        return (index_to_action(argmax(pred)), argmax(pred))
 
     ##
     # Turn image (or images) into a tensor that we can use in Pytorch

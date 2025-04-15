@@ -3,7 +3,8 @@ from training_data_extraction import RobotNavigationControl
 from thortils import launch_controller
 from thortils.utils.math import sep_spatial_sample
 import thortils as tt
-import prior, random
+import prior, random, cv2
+from PIL import Image
 
 ##
 # This class will use one or more of our neural network models and navigate through a scene
@@ -11,7 +12,7 @@ import prior, random
 class SceneNavigator():
     def __init__(self):
         # Load a CNN that tells us the next best move
-        #self.sa = SceneAnalyzer("accuracy_093.pth")
+        self.sa = SceneAnalyzer("accuracy_093.pth")
         self.rnc = RobotNavigationControl()
         self.dataset = None
         self.controller = None
@@ -81,7 +82,38 @@ class SceneNavigator():
             ## Teleport, then start new exploration. Achieve goal. Then repeat.
             self.rnc.teleport_to(place_with_rtn)
 
+            # We've just been put in a random place in a habitat. We want to move now to where we want to go,
+            # e.g., middle of the room, a door, etc.
+            self.navigate_to_goal()
+
             explorations_processed += 1
+
+    ##
+    # Use a neural network to navigate to the required goal.
+    # For now that will be navigating to the middle of the room.
+    ##
+    def navigate_to_goal(self):
+        next_move_str = "START"
+        while next_move_str != "STOP":
+            # first get the from view image
+            event = self.controller.last_event
+            img = event.cv2img
+            rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(rgb_img)
+
+            next_move_str, next_move_index = self.sa.next_best_move(raw_img=pil_image)
+
+            match next_move_str:
+                case "RotateLeft":
+                    self.rnc.rotate_left(45)
+                case "RotateRight":
+                    self.rnc.rotate_right(45)
+                case "MoveAhead":
+                    self.rnc.move_ahead(0.25)
+                case "STOP":
+                    continue
+                case _:  # Default case
+                    return "Unknown Command"
 
     ##
     # Get Procthor-10k dataset

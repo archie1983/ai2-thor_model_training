@@ -15,12 +15,15 @@ hp2 = HyperParameters(architecture_id = 2,
                      learning_rate = 0.001)
 
 hp3 = HyperParameters(architecture_id = 2,
-                     batch_size = 10,
-                     data_split = [0.8, 0.2],
-                     min_expl_size = 0,
-                     use_front_view_only = True,
-                     learning_rate = 0.001)
+                      batch_size = 10,
+                      data_split = [0.8, 0.2],
+                      min_expl_size = 0,
+                      use_front_view_only = True,
+                      learning_rate = 0.001,
+                      momentum = 0.95,
+                      nesterov_momentum = True)
 
 #hnt = HabitatNNTrainer(hp3)
-hnt = HabitatNNTrainer(hp3, load_saved = True, pth_path = 'accuracy_093.pth')
+#hnt = HabitatNNTrainer(hp3, load_saved = True, pth_path = 'accuracy_093.pth')
+hnt = HabitatNNTrainer(hp3)
 hnt.do_epochs(150)

@@ -11,7 +11,14 @@ class HyperParameters():
     # min_expl_size : If exploration contains fewer than this many steps, then we skip it
     # use_front_view_only : Whether we want to use the front view only (True) or also the side images (False)
     ##
-    def __init__(self, architecture_id = 1, batch_size = 10, data_split = [0.9, 0.1], min_expl_size = 0, use_front_view_only = False, learning_rate = 0.001):
+    def __init__(self, architecture_id = 1,
+                 batch_size = 10,
+                 data_split = [0.9, 0.1],
+                 min_expl_size = 0,
+                 use_front_view_only = False,
+                 learning_rate = 0.001,
+                 momentum = 0.95,
+                 nesterov_momentum = True):
         self.architecture_id = architecture_id
         self.batch_size = batch_size
         self.data_split = data_split
@@ -19,6 +26,8 @@ class HyperParameters():
         self.use_front_view_only = use_front_view_only
         self.seed = 21011983 # the same constant random seed to make sure that DataLoader splits data between test and train datasets the same way every time
         self.learning_rate = learning_rate # learning rate
+        self.momentum = momentum
+        self.nesterov_momentum = nesterov_momentum
         
         # Below are parameters that we keep settable only here and not withing code. This can change, but I thought that it's unlikely
         # we would want to often change these parameters.

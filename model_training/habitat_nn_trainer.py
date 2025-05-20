@@ -12,7 +12,7 @@ from time import time
 # and then we train.
 ##
 class HabitatNNTrainer():
-    def __init__(self, hp, load_saved = False, pth_path = ''):
+    def __init__(self, hp, load_saved = False, load_saved_optim = False, pth_path = ''):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.hp = hp # hyper params
 
@@ -40,7 +40,7 @@ class HabitatNNTrainer():
         # if we want to load saved checkpoint, then we will now overwrite hyperparams along with
         # model, optimizer, current loss and current epoch
         if load_saved:
-            (self.model, self.optimizer) = self.load_model(self.model, self.optimizer, pth_path)
+            (self.model, self.optimizer) = self.load_model(self.model, self.optimizer, pth_path, load_saved_optim)
 
         ## Print the model for debug purposes
         print(self.model)
@@ -156,7 +156,7 @@ class HabitatNNTrainer():
     ##
     # Function to load previously saved model with weights, optimizer, loss, epoch and hyperparams
     ##
-    def load_model(self, model, optimizer, load_path):
+    def load_model(self, model, optimizer, load_path, load_saved_optim):
         checkpoint = torch.load(load_path, map_location=self.device)
         self.hp = checkpoint['hyperparams']
 
@@ -167,7 +167,7 @@ class HabitatNNTrainer():
             model.load_state_dict(checkpoint['model_state_dict'])
 
         # Load optimizer and training state (optional)
-        if optimizer is not None:
+        if load_saved_optim and optimizer is not None:
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
         # Update hyperparameters

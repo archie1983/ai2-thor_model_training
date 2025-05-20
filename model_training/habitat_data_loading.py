@@ -8,9 +8,10 @@ class HabitatDataLoading():
     def __init__(self, hp):
         # Set seed with fallback to 21011983 if not specified
         if not hasattr(hp, 'seed'):
-            setattr(hp, 'seed', 21011983)
+            setattr(hp, 'seed', 0)
         # Set random seeds for reproducibility
-        self._set_seeds(hp.seed)
+        if hp.seed > 0:
+            self._set_seeds(hp.seed)
 
         # Define transforms
         self.transform = habitat_pics_transform
@@ -30,7 +31,10 @@ class HabitatDataLoading():
         ## If we want to use distributed sampler, then DataLoader will require a sampler
         if hp.USE_DISTRIBUTED_SAMPLER:
             # Use a DistributedSampler to split the data
-            train_sampler = DistributedSampler(train_dataset, shuffle=True, seed=hp.seed)
+            if hp.seed > 0:
+                train_sampler = DistributedSampler(train_dataset, shuffle=True, seed=hp.seed)
+            else:
+                train_sampler = DistributedSampler(train_dataset, shuffle=True)
             test_sampler = DistributedSampler(test_dataset, shuffle=False)  # No shuffling for test
 
             self.train_data_loader = DataLoader(
@@ -46,16 +50,23 @@ class HabitatDataLoading():
                 shuffle=False
             )
         else:
-            # Use fixed generator for consistent shuffling
-            g = torch.Generator()
-            g.manual_seed(hp.seed)
+            if hp.seed > 0:
+                # Use fixed generator for consistent shuffling
+                g = torch.Generator()
+                g.manual_seed(hp.seed)
+                self.train_data_loader = DataLoader(
+                    train_dataset,
+                    batch_size=hp.batch_size,
+                    shuffle=True,
+                    generator=g
+                )
+            else:
+                self.train_data_loader = DataLoader(
+                    train_dataset,
+                    batch_size=hp.batch_size,
+                    shuffle=True
+                )
 
-            self.train_data_loader = DataLoader(
-                train_dataset,
-                batch_size=hp.batch_size,
-                shuffle=True,
-                generator=g
-            )
             self.test_data_loader = DataLoader(
                 test_dataset,
                 batch_size=hp.batch_size,

@@ -11,7 +11,7 @@ from thortils.agent import thor_reachable_positions, thor_agent_position, thor_a
 from thortils.utils import roundany
 from thortils.controller import _resolve
 from thortils.object import thor_closest_object_of_type, thor_visible_objects
-from . import RobotNavigationControl
+from . import RobotNavigationControl, RoomType
 from thortils.scene import ThorSceneInfo
 from thortils.map3d import Mapper3D
 
@@ -20,6 +20,8 @@ import thortils as tt
 
 import matplotlib
 import matplotlib.pyplot as plt
+
+import numpy as np
 
 from PIL import Image
 import copy
@@ -46,19 +48,30 @@ class NavigationTrainingDataExtractor:
         self.rooms_in_habitat = None
 
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
-        self.NUMBER_OF_HABITATS_IN_BATCH = 300 # how many habitats in one go do we want to explore
+        self.NUMBER_OF_HABITATS_IN_BATCH = 300 # 55 # how many habitats in one go do we want to explore
         self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 1000 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
 
         ## figure out where are we running- in terminal or jupyter
         if not self.is_running_in_jupyter():
             matplotlib.use('Agg')
         #print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa::: ", matplotlib.get_backend())
+        self.room_cnts = []
 
     def getDataSet(self):
         if (self.dataset is None):
             self.dataset = prior.load_dataset("procthor-10k", "439193522244720b86d8c81cde2e51e3a4d150cf")
             #print(self.dataset)
         return self.dataset
+
+    def is_full_house(self, rooms):
+        existing_room_names = set()
+        for room in rooms:
+            rl = room[0].upper()
+            if rl == "LIVINGROOM":
+                rl = "LIVING ROOM"
+            existing_room_names.add(rl)
+
+        return set(RoomType.regular_labels()) == existing_room_names
 
     ##
     # Load a PROCTHOR scene specified by the habitat_id. They will all be loaded
@@ -73,7 +86,14 @@ class NavigationTrainingDataExtractor:
         print("Loading : " + data_split + "[" + str(habitat_id) + "]")
         house = dataset[data_split][habitat_id]
         self.rooms_in_habitat = get_rooms_ground_truth(house)
-        #print("ROOMS:" + str(self.rooms_in_habitat))
+
+        # If we would only want to process habitats with all 4 room types, then the below
+        # needs to be uncommented.
+        #if not self.is_full_house(self.rooms_in_habitat):
+        #    return None
+
+        print("ROOMS:",  len(self.rooms_in_habitat))
+        self.room_cnts.append(len(self.rooms_in_habitat))
 
         # For now accept every habitat as good. We may want to introduce some
         # logic here at a later time to only explore suitable rooms using some
@@ -473,12 +493,15 @@ class NavigationTrainingDataExtractor:
 
             habitat_id = highest_habitat_index + 1 + processed_habitats_in_this_batch
             habitat = self.ae_load_proctor_habitat(habitat_id)
+            processed_habitats_in_this_batch += 1
 
             if not habitat:
                 continue
 
             self.ae_process_proctor_habitat(habitat, habitat_id)
-            processed_habitats_in_this_batch += 1
+
+        print(np.mean(self.room_cnts), np.median(self.room_cnts))
+        print(self.room_cnts)
 
         if (self.controller != None):
             self.controller.stop()

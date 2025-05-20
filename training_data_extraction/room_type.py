@@ -103,6 +103,10 @@ class RoomType(Enum):
         return ["LIVING ROOM", "KITCHEN", "BEDROOM", "BATHROOM", "OFFICE", "STORAGE"]
 
     @classmethod
+    def regular_labels(self):
+        return ["LIVING ROOM", "KITCHEN", "BEDROOM", "BATHROOM"]
+
+    @classmethod
     def all_options(self, include_office_and_storage = True):
         if (include_office_and_storage):
             return [RoomType.LIVING_ROOM, RoomType.KITCHEN, RoomType.BEDROOM, RoomType.BATHROOM, RoomType.OFFICE, RoomType.STORAGE]

@@ -445,12 +445,20 @@ class RobotNavigationControl:
             print("self.prev_pose", self.prev_pose)
         path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(self.prev_pose))
 
+        # Before we start traversing the path, the current pose is what we have in self.prev_pose
+        pose = self.prev_pose
+
         for i in range(len(path)):
             step = plan[i] # current step is how to get from previous point to here
             # storing the current path metrics with the last taken picture. When i == 0, the picture
             # will be taken outside the loop and will be the very first view before the motion starts.
-            print(step[0], path_length_at_this_step, img_uris)
-            data_manager.add_metrics((step[0], path_length_at_this_step, img_uris))
+            print(pose, step[0], path_length_at_this_step, img_uris)
+
+            # What are we storing in metrics:
+            # step[0] : What action is best to take at this location
+            # path_length_at_this_step : How long have we got to go before we have taken this action
+            # img_uris : What does it look like at this point
+            data_manager.add_metrics((pose, step[0], path_length_at_this_step, img_uris))
             # now update the pose and recalculate path length for the next step.
             # The very last pose will yield path length of 0 and loop will exit, but
             # that's ok because we have a final step after the loop that we gather as STOP action
@@ -460,8 +468,8 @@ class RobotNavigationControl:
             img_uris = [self.relative_target_dir(iu) for iu in img_uris]
             remaining_path = remaining_path[1:] # update remaining path
 
-        print("STOP", 0, img_uris) # final step - we've arrived. Remaining path length = 0 and action = STOP
-        data_manager.add_metrics(("STOP", 0, img_uris))
+        print(pose, "STOP", 0, img_uris) # final step - we've arrived. Remaining path length = 0 and action = STOP
+        data_manager.add_metrics((pose, "STOP", 0, img_uris))
 
         self.controller.step(action="Done")
 

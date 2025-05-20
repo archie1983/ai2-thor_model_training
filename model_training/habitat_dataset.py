@@ -35,16 +35,16 @@ class HabitatDataset(Dataset):
                     #print(expl_length)
                     # Go through all exploration steps and append it to the dataset
                     for step in expl_steps:
-                        (action, path_length, img_uris) = step
+                        (pose, action, path_length, img_uris) = step
                         img_uris = [habitat_dir + "/" + iu for iu in img_uris] # img_uris need to be adjusted with the habitat folder
                         #self.data.extend(pickle.load(f))
-                        self.data.append((action, path_length, img_uris))
+                        self.data.append((pose, action, path_length, img_uris))
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        action, path_length, image_paths = self.data[idx]
+        pose, action, path_length, image_paths = self.data[idx]
         #print("AE::::::", action, path_length, image_paths)
 
         images = []

@@ -10,9 +10,9 @@ from PIL import Image
 # This class will use one or more of our neural network models and navigate through a scene
 ##
 class SceneNavigator():
-    def __init__(self):
+    def __init__(self, pth_path = "accuracy_093.pth"):
         # Load a CNN that tells us the next best move
-        self.sa = SceneAnalyzer("accuracy_093.pth")
+        self.sa = SceneAnalyzer(pth_path)
         self.rnc = RobotNavigationControl()
         self.dataset = None
         self.controller = None
@@ -39,13 +39,13 @@ class SceneNavigator():
             self.rnc.reset_state()
             #self.rnc.set_controller(self.controller)
 
-        self.process_placements_in_habitat()
+        self.process_random_placements_in_habitat()
 
     ##
     # Here we will select a number of random placements and then attempt to navigate from each of them
     # to some goal.
     ##
-    def process_placements_in_habitat(self):
+    def process_random_placements_in_habitat(self):
         ## All we need is a set of random positions and we get them like this:
         # params for the random teleportation part
         seed = 1983

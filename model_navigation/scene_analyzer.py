@@ -58,10 +58,10 @@ class SceneAnalyzer():
             # make a prediction using current model
             pred = self.model(images)
 
-        print(pred)
+        #print(pred)
         pred = pred.cpu()
-        print(argmax(pred))
-        print(index_to_action(argmax(pred)))
+        #print(argmax(pred))
+        #print(index_to_action(argmax(pred)))
 
         return (index_to_action(argmax(pred)), argmax(pred))
 

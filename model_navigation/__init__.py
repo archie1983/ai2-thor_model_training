@@ -1,3 +1,4 @@
 from .scene_analyzer import SceneAnalyzer
 from .scene_navigator import SceneNavigator
+from .fuzzy_navigation_controller import FuzzyNavigationController
 from .nn_performance_analysis import NNPerformanceAnalyzer

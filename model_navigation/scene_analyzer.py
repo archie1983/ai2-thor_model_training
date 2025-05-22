@@ -58,12 +58,12 @@ class SceneAnalyzer():
             # make a prediction using current model
             pred = self.model(images)
 
-        #print(pred)
+        #print("CNN Pred: ", pred)
         pred = pred.cpu()
-        #print(argmax(pred))
+        #print("CNN argmax: ", argmax(pred))
         #print(index_to_action(argmax(pred)))
 
-        return (index_to_action(argmax(pred)), argmax(pred))
+        return (index_to_action(argmax(pred)), argmax(pred), pred)
 
     ##
     # Turn image (or images) into a tensor that we can use in Pytorch

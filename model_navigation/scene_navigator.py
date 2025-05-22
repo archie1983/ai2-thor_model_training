@@ -101,7 +101,7 @@ class SceneNavigator():
             rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             pil_image = Image.fromarray(rgb_img)
 
-            next_move_str, next_move_index = self.sa.next_best_move(raw_img=pil_image)
+            next_move_str, next_move_index, softmax = self.sa.next_best_move(raw_img=pil_image)
 
             match next_move_str:
                 case "RotateLeft":

@@ -15,13 +15,21 @@ class FuzzyNavigationController:
 
         self.left_action_ndx = action_to_index("RotateLeft")
         self.right_action_ndx = action_to_index("RotateRight")
+        self.stop_action_ndx = action_to_index("STOP")
+        self.ahead_action_ndx = action_to_index("MoveAhead")
 
     ##
     # Maintain memory of previous CNN outputs and smooth the decision.
     ##
-    def get_smooth_action(self, cnn_outputs, hyster = False):
+    def get_smooth_action(self, cnn_outputs_in, hyster = False):
         #print("IN: ", cnn_outputs.squeeze())
-        cnn_outputs = cnn_outputs.squeeze()
+        cnn_outputs = cnn_outputs_in.squeeze()
+
+        # return values
+        ret_action = "MoveAhead"
+        ret_action_id = action_to_index("MoveAhead")
+        ret_tensor = cnn_outputs
+
         # Store current raw prediction
         self.action_history.append(cnn_outputs)
         if len(self.action_history) > self.memory_length:
@@ -30,12 +38,24 @@ class FuzzyNavigationController:
         # Apply fuzzy rules for temporal smoothing
         smoothed_outputs = self.smooth_with_fuzzy_rules()
 
-        # If we also want hysteresis, then continue, otherwise return what we have
-        if hyster:
-            decision_id = self.make_decision_with_hysteresis(smoothed_outputs)
-            return (index_to_action(decision_id.item()), decision_id, smoothed_outputs)
+        raw_cnn_best_action_id = argmax(cnn_outputs_in)
+        if (raw_cnn_best_action_id == self.stop_action_ndx or raw_cnn_best_action_id == self.ahead_action_ndx):
+            '''
+            If we only have STOP or MoveAhead then do that with no smoothing
+            '''
+            ret_action_id = raw_cnn_best_action_id
+            ret_action = index_to_action(ret_action_id)
+            ret_tensor = cnn_outputs
+        elif hyster: # If we also want hysteresis, then continue, otherwise return what we have
+            ret_action_id = self.make_decision_with_hysteresis(smoothed_outputs)
+            ret_action = index_to_action(ret_action_id.item())
+            ret_tensor = smoothed_outputs
         else:
-            return (index_to_action(argmax(smoothed_outputs)), argmax(smoothed_outputs), smoothed_outputs)
+            ret_action_id = argmax(smoothed_outputs)
+            ret_action = index_to_action(ret_action_id)
+            ret_tensor = smoothed_outputs
+
+        return (ret_action, ret_action_id, ret_tensor)
 
     ##
     # Detect oscillation in current and previous states and if detected, then smooth the output
@@ -50,7 +70,18 @@ class FuzzyNavigationController:
 
         # Detect oscillation (turn left -> turn right or vice versa)
         left_idx, right_idx = self.left_action_ndx, self.right_action_ndx # action indexes
-        oscillation_strength = min( # Maybe use max instead to measure oscillation strength?
+
+        # normalize:
+        current -= min(current.clone())
+        current /= sum(current.clone())
+
+        previous -= min(previous.clone())
+        previous /= sum(previous.clone())
+
+        # Maybe use max instead to measure oscillation strength?
+        # Maybe we want to normalize the tensor first?
+        # And maybe we want to only do it if we detect oscillation?
+        oscillation_strength = max(
             previous[left_idx] * current[right_idx],
             previous[right_idx] * current[left_idx]
         )
@@ -59,11 +90,21 @@ class FuzzyNavigationController:
         damping_factor = 0.7  # Tunable parameter
 
         smoothed = current.clone()
-        if oscillation_strength > 0.3:  # Fuzzy threshold
-            # Apply temporal averaging with more weight on previous stable decisions
-            for i in range(len(smoothed)):
-                # Weighted average of recent predictions
-                smoothed[i] = damping_factor * previous[i] + (1 - damping_factor) * current[i]
+
+        prev_action_id = argmax(previous)
+        cur_action_id = argmax(current)
+        if ((prev_action_id == left_idx and cur_action_id == right_idx)
+                or (prev_action_id == right_idx and cur_action_id == left_idx)):
+
+            if oscillation_strength > 0.3 or True:  # Fuzzy threshold
+                print("Prev: ", previous, "os: ", oscillation_strength)
+                print("Cur: ", current)
+                # Apply temporal averaging with more weight on previous stable decisions
+                for i in range(len(smoothed)):
+                    # Weighted average of recent predictions
+                    smoothed[i] = damping_factor * previous[i] + (1 - damping_factor) * current[i]
+
+                print("Smo: ", smoothed)
 
         return smoothed
 

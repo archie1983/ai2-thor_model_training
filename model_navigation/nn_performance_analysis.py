@@ -145,7 +145,7 @@ class NNPerformanceAnalyzer():
             (cur_pose_gt, next_action_gt, path_length_gt, img_uris) = nav_el
             pic_of_interest = self.data_dir + img_uris[0]
             next_move_str, next_move_index, softmax = self.sa.next_best_move(scene_img_url=pic_of_interest)
-            #next_move_str, next_move_index, softmax = self.fnc.get_smooth_action(softmax, False)
+            next_move_str, next_move_index, softmax = self.fnc.get_smooth_action(softmax, False)
             #next_move_str, next_move_index, softmax = self.fnc.get_smooth_action(softmax, True)
 
             # gather statistics about ground truth

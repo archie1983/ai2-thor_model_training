@@ -1,4 +1,4 @@
-from . import SceneAnalyzer
+from . import SceneAnalyzer, FuzzyNavigationController
 from training_data_extraction import RobotNavigationControl
 from thortils import launch_controller
 from thortils.utils.math import sep_spatial_sample
@@ -16,6 +16,8 @@ class SceneNavigator():
         self.rnc = RobotNavigationControl()
         self.dataset = None
         self.controller = None
+        # Fuzzifier and hysteresis machine for our CNN decisions
+        self.fnc = FuzzyNavigationController()
 
     def process_required_habitats(self):
         self.process_habitat(10)
@@ -102,6 +104,7 @@ class SceneNavigator():
             pil_image = Image.fromarray(rgb_img)
 
             next_move_str, next_move_index, softmax = self.sa.next_best_move(raw_img=pil_image)
+            next_move_str, next_move_index, softmax = self.fnc.get_smooth_action(softmax, False)
 
             match next_move_str:
                 case "RotateLeft":

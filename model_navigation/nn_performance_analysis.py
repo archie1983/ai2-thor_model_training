@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 
 ##
-# This class will use one or more of our neural network models and navigate through a scene
+# This class will use one or more of our neural network models and analyze their performance.
 ##
 class NNPerformanceAnalyzer():
     def __init__(self, pth_path = "accuracy_093.pth"):

@@ -1,5 +1,6 @@
 import torch
 from numpy.ma.core import argmax
+from torch import softmax
 
 from model_training import load_model_architecture, habitat_pics_transform, index_to_action
 from PIL import Image
@@ -58,10 +59,12 @@ class SceneAnalyzer():
             # make a prediction using current model
             pred = self.model(images)
 
-        #print("CNN Pred: ", pred)
+        print("CNN Pred: ", pred)
         pred = pred.cpu()
         #print("CNN argmax: ", argmax(pred))
         #print(index_to_action(argmax(pred)))
+        print("softmax", softmax(pred, dim=1))
+        pred = softmax(pred, dim=1)
 
         return (index_to_action(argmax(pred)), argmax(pred), pred)
 

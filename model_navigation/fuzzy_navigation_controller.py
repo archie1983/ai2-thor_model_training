@@ -8,7 +8,7 @@ from numpy.ma.core import argmax
 # as Fuzzy logic membership function outputs.
 ##
 class FuzzyNavigationController:
-    def __init__(self, memory_length=5):
+    def __init__(self, memory_length=8):
         self.action_history = []
         self.decisions = []
         self.memory_length = memory_length
@@ -71,12 +71,11 @@ class FuzzyNavigationController:
         # Detect oscillation (turn left -> turn right or vice versa)
         left_idx, right_idx = self.left_action_ndx, self.right_action_ndx # action indexes
 
-        # normalize:
-        current -= min(current.clone())
-        current /= sum(current.clone())
-
-        previous -= min(previous.clone())
-        previous /= sum(previous.clone())
+        # normalize: (no need anymore since we now use softmax on CNN outputs)
+        #current -= min(current.clone())
+        #current /= sum(current.clone())
+        #previous -= min(previous.clone())
+        #previous /= sum(previous.clone())
 
         # Maybe use max instead to measure oscillation strength?
         # Maybe we want to normalize the tensor first?
@@ -87,7 +86,7 @@ class FuzzyNavigationController:
         )
 
         # Apply fuzzy rule: "IF strong oscillation THEN dampen response"
-        damping_factor = 0.7  # Tunable parameter
+        damping_factor = 0.5  # Tunable parameter
 
         smoothed = current.clone()
 

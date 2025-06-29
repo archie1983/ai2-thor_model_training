@@ -105,6 +105,7 @@ class SceneNavigator():
 
             next_move_str, next_move_index, softmax = self.sa.next_best_move(raw_img=pil_image)
             next_move_str, next_move_index, softmax = self.fnc.get_smooth_action(softmax, False)
+            print(next_move_str)
 
             match next_move_str:
                 case "RotateLeft":

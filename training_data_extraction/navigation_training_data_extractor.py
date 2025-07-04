@@ -48,8 +48,8 @@ class NavigationTrainingDataExtractor:
         self.rooms_in_habitat = None
 
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
-        self.NUMBER_OF_HABITATS_IN_BATCH = 300 # 55 # how many habitats in one go do we want to explore
-        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 1000 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
+        self.NUMBER_OF_HABITATS_IN_BATCH = 1 # 55 # how many habitats in one go do we want to explore
+        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 1 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
 
         ## figure out where are we running- in terminal or jupyter
         if not self.is_running_in_jupyter():
@@ -155,6 +155,8 @@ class NavigationTrainingDataExtractor:
         placements = sep_spatial_sample(reachable_positions, sep, num_stops,
                                         rnd=rnd)
 
+        print('debug:',len(reachable_positions))
+        # do sth to sample points
         print(placements)
 
         explorations_processed = 0
@@ -194,6 +196,7 @@ class NavigationTrainingDataExtractor:
             self.visualise_path(path)
 
             # Walk through the plan
+            # Store pictures
             self.rnc.follow_planned_path(path, plan, self.habitat_mgmt)
 
             # close off current exploration

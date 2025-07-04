@@ -1,4 +1,5 @@
 # Importing the necessary libraries for AI2-THOR to run
+import json
 
 #!pip install --upgrade ai2thor ai2thor-colab &> /dev/null
 import ai2thor
@@ -30,7 +31,7 @@ from . import (get_path_length, convert_pose_set2tuple, normalize_colors)
 # with the simulation environment.
 class RobotNavigationControl:
     is_DEBUG = False
-    NUM_ANGLES = 3 # how many angles we want to capture from each location along the path
+    NUM_ANGLES = 8 # how many angles we want to capture from each location along the path
 
     # Set a controller for the robot navigation control to use so that it
     # can interact with the AI2-THOR environment
@@ -247,7 +248,9 @@ class RobotNavigationControl:
         self.controller.step(action="Teleport", position=position, rotation=rotation)
         #plot_frames(self.controller.last_event)
         img_uri = self.mapper.get_front_view()
-        img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
+        json_path = os.path.join(self.mapper.target_dir, str(self.mapper.cnt) + ".json")
+        self.store_pos_and_rotation_json(json_path)
+        img_uri_sides = self.get_side_cameras_views_and_json(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
         img_uris = [img_uri]
         img_uris.extend(img_uri_sides)
         return img_uris
@@ -308,6 +311,56 @@ class RobotNavigationControl:
             img_url = os.path.join(img_dir, str(int(angle)) + "_" + str(img_index) + ".png")
             cv2.imwrite(img_url, img)
             img_urls.append(img_url)
+
+        # Restore original position and rotation
+        self.controller.step(
+            action="TeleportFull",
+            position=initial_position,
+            rotation=initial_rotation,
+            horizon=initial_rotation["x"],
+            standing=initial_standing  # Include standing parameter
+        )
+
+        return img_urls
+
+    def get_side_cameras_views_and_json(self, img_dir, img_index):
+        """Capture a 360-degree panorama by rotating the agent"""
+        event = self.controller.last_event
+        original_yaw = event.metadata["agent"]["rotation"]["y"]
+        initial_position = event.metadata["agent"]["position"]
+        initial_rotation = event.metadata["agent"]["rotation"]
+        initial_standing = event.metadata["agent"]["isStanding"]  # Get current standing state
+
+        img_urls = []
+
+        # Capture frames at different angles. We already have the front view, so get the others,
+        # that's why start with 1, not 0, but divide 360 still by the full number of angles.
+        for i in range(1, self.NUM_ANGLES):
+            angle = (360 / self.NUM_ANGLES) * i
+
+            required_yaw = (original_yaw + angle) % 360
+            # Teleport to the same position but with a different rotation
+            self.controller.step(
+                action="TeleportFull",
+                position=initial_position,
+                rotation=dict(x=0, y=required_yaw, z=0),
+                horizon=initial_rotation["x"],
+                standing=initial_standing  # Include standing parameter
+            )
+
+            # Get the frame from the default camera
+            img = self.controller.last_event.cv2img
+            #frames.append(frame)
+
+            # store them
+            os.makedirs(img_dir, exist_ok=True)
+            img_url = os.path.join(img_dir, str(int(angle)) + "_" + str(img_index) + ".png")
+            cv2.imwrite(img_url, img)
+            img_urls.append(img_url)
+            # store json
+            json_url = os.path.join(img_dir, str(int(angle)) + "_" + str(img_index) + ".json")
+            self.store_pos_and_rotation_json(json_url)
+
 
         # Restore original position and rotation
         self.controller.step(
@@ -436,6 +489,10 @@ class RobotNavigationControl:
 
         remaining_path = path
         img_uri = self.mapper.get_front_view()
+        # get_side_cameras_views is a function that will take a picture
+        # consider store the pose and orientation
+        print(self.get_agent_pos_and_rotation())
+        # end
         img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
         img_uris = [img_uri]
         img_uris.extend(img_uri_sides)
@@ -469,6 +526,68 @@ class RobotNavigationControl:
             remaining_path = remaining_path[1:] # update remaining path
 
         print(pose, "STOP", 0, img_uris) # final step - we've arrived. Remaining path length = 0 and action = STOP
+        data_manager.add_metrics((pose, "STOP", 0, img_uris))
+
+        self.controller.step(action="Done")
+
+    def store_pos_and_rotation_json(self, json_path):
+        pos_and_rotation = self.get_agent_pos_and_rotation()
+        pos_and_rotation_json = {'pos_x': pos_and_rotation[0][0],
+                                 'pos_y': pos_and_rotation[0][1],
+                                 'pos_z': pos_and_rotation[0][2],
+                                 'rot': pos_and_rotation[1][1]}
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(pos_and_rotation_json, f, ensure_ascii=False, indent=4)
+
+
+    # This function will store image and json (x, y, th) for diffusion
+    def follow_planned_path_and_store_data(self, path, plan, data_manager):
+        # self.prev_pose = self.get_agent_pos_and_rotation() # This is where we are before the plan started
+        self.prev_pose = thor_agent_pose(self.controller)  # This is where we are before the plan started
+
+        # Looks like I will need a wider angle camera and a better path length estimate to take into account
+        # smaller distances otherwise we get 0 length estimate when there is still a move left. Also turning
+        # might need a different score.
+
+        remaining_path = path
+        img_uri = self.mapper.get_front_view()
+        # get_side_cameras_views is a function that will take a picture
+        # consider store the pose and orientation
+        print(self.get_agent_pos_and_rotation())
+        json_path = os.path.join(self.mapper.target_dir, str(self.mapper.cnt) + ".json")
+        self.store_pos_and_rotation_json(json_path)
+        # end
+        img_uri_sides = self.get_side_cameras_views_and_json(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
+        img_uris = [img_uri]
+        img_uris.extend(img_uri_sides)
+        img_uris = [self.relative_target_dir(iu) for iu in img_uris]
+
+        path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(self.prev_pose))
+
+        # Before we start traversing the path, the current pose is what we have in self.prev_pose
+        pose = self.prev_pose
+
+        for i in range(len(path)):
+            step = plan[i]  # current step is how to get from previous point to here
+            # storing the current path metrics with the last taken picture. When i == 0, the picture
+            # will be taken outside the loop and will be the very first view before the motion starts.
+            print(pose, step[0], path_length_at_this_step, img_uris)
+
+            # What are we storing in metrics:
+            # step[0] : What action is best to take at this location
+            # path_length_at_this_step : How long have we got to go before we have taken this action
+            # img_uris : What does it look like at this point
+            data_manager.add_metrics((pose, step[0], path_length_at_this_step, img_uris))
+            # now update the pose and recalculate path length for the next step.
+            # The very last pose will yield path length of 0 and loop will exit, but
+            # that's ok because we have a final step after the loop that we gather as STOP action
+            pose = path[i]
+            path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(pose))
+            img_uris = self.navigate_to_pose(pose)  # move to the next step and take a picture
+            img_uris = [self.relative_target_dir(iu) for iu in img_uris]
+            remaining_path = remaining_path[1:]  # update remaining path
+
+        print(pose, "STOP", 0, img_uris)  # final step - we've arrived. Remaining path length = 0 and action = STOP
         data_manager.add_metrics((pose, "STOP", 0, img_uris))
 
         self.controller.step(action="Done")

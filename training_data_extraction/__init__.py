@@ -11,3 +11,4 @@ from .ai2_thor_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
 from .scene_data_management import NavigationTrainingDataManagement
 from .ae_robot_simulation_control import RobotNavigationControl
 from .navigation_training_data_extractor import NavigationTrainingDataExtractor
+from .diffusion_training_data_extractor import DiffusionTrainingDataExtractor

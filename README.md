@@ -1,5 +1,13 @@
 The project relies on [AI2-THOR](https://github.com/allenai/ai2thor) and [ProcTHOR-10k](https://github.com/allenai/procthor-10k) dataset
 
+Note: This branch is specifically intended for extracting data for the diffusion model. The data format consists of the robot's spatial information (x, y, z, orientation).
+
+The entry point for code execution (data extraction) is located at:
+training_data_extractor/diffusion_training_data_extractor.py
+
+After extraction, the data needs to be structured into a dataset (formatted as WebDataset). Please use:
+data_transform.py
+
 Please download and install them before running this code. The AI2-THOR used is v5.0.0.
 
 You must also install Thortils version from the referenced repository in the git submodule here. The vanilla Thortils will not work as I made several important changes. The best way to do that is to set up a conda environment for this purpose and install Thortils using:

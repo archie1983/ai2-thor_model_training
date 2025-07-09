@@ -1,5 +1,5 @@
 from . import SceneAnalyzer, FuzzyNavigationController
-from training_data_extraction import RobotNavigationControl
+from training_data_extraction import RobotNavigationControl, AI2THORUtils
 from thortils import launch_controller
 from thortils.utils.math import sep_spatial_sample
 import thortils as tt
@@ -14,8 +14,8 @@ class SceneNavigator():
         # Load a CNN that tells us the next best move
         self.sa = SceneAnalyzer(pth_path)
         self.rnc = RobotNavigationControl()
-        self.dataset = None
         self.controller = None
+        self.atu = AI2THORUtils()
         # Fuzzifier and hysteresis machine for our CNN decisions
         self.fnc = FuzzyNavigationController()
 
@@ -28,7 +28,7 @@ class SceneNavigator():
     ##
     def process_habitat(self, habitat_id):
         # load required habitat
-        habitat = self.load_proctor_habitat(habitat_id)
+        habitat = self.atu.load_proctor_habitat(habitat_id)
 
         # Launch a controller for the loaded habitat. If we already have a controller,
         # then reset it instead of loading a new one.
@@ -118,25 +118,6 @@ class SceneNavigator():
                     continue
                 case _:  # Default case
                     return "Unknown Command"
-
-    ##
-    # Get Procthor-10k dataset
-    ##
-    def getDataSet(self):
-        if (self.dataset is None):
-            self.dataset = prior.load_dataset("procthor-10k", "439193522244720b86d8c81cde2e51e3a4d150cf")
-            #print(self.dataset)
-        return self.dataset
-
-    ##
-    # Load a PROCTHOR scene specified by the habitat_id.
-    ##
-    def load_proctor_habitat(self, habitat_id):
-        dataset = self.getDataSet()
-        self.habitat_id = habitat_id
-        print("Loading : train[" + str(habitat_id) + "]")
-        house = dataset["train"][habitat_id]
-        return house
 
 #if __name__ == "__main__":
 #    sn = SceneNavigator()

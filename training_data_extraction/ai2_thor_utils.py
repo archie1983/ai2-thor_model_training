@@ -1,7 +1,7 @@
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from . import RoomType
-import math, cv2
+import math, cv2, prior
 from thortils.utils.math import (euclidean_dist, to_deg)
 from thortils.agent import thor_pose_as_tuple
 
@@ -12,7 +12,26 @@ from thortils.agent import thor_pose_as_tuple
 ##
 class AI2THORUtils:
     def __init__(self):
-        pass
+        self.dataset = None
+
+    ##
+    # Get Procthor-10k dataset
+    ##
+    def getDataSet(self):
+        if (self.dataset is None):
+            self.dataset = prior.load_dataset("procthor-10k", "439193522244720b86d8c81cde2e51e3a4d150cf")
+            # print(self.dataset)
+        return self.dataset
+
+    ##
+    # Load a PROCTHOR scene specified by the habitat_id.
+    ##
+    def load_proctor_habitat(self, habitat_id):
+        dataset = self.getDataSet()
+        self.habitat_id = habitat_id
+        print("Loading : train[" + str(habitat_id) + "]")
+        house = dataset["train"][habitat_id]
+        return house
 
     ##
     # Extract visible objects from a collection of objects

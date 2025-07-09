@@ -3,7 +3,7 @@ from training_data_extraction import RobotNavigationControl, AI2THORUtils
 from thortils import launch_controller
 from thortils.utils.math import sep_spatial_sample
 import thortils as tt
-import prior, random, cv2
+import random, cv2
 from PIL import Image
 
 ##

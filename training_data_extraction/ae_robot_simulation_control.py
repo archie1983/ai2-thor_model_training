@@ -145,6 +145,13 @@ class RobotNavigationControl:
         show_objects_table(self.controller.last_event.metadata['objects'])
         print(self.controller.last_event.metadata['objects'])
 
+    # Execute an action passed from elsewhere. The action will be one of the following: [RotateLeft, RotateRight, MoveAhead]
+    def execute_action(self, action):
+        if "Rotate" in action:
+            self.controller.step(action=action, degrees=45) # if we want to rotate, then we will be rotating by 45 degrees
+        else:
+            self.controller.step(action=action, moveMagnitude=0.25) # move ahead by 25cm
+
     # Rotate left by given number of degrees degrees
     def rotate_left(self, deg):
         frames = []

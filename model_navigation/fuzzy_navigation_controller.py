@@ -1,4 +1,4 @@
-from model_training import action_to_index, index_to_action
+from training_data_extraction import action_to_index, index_to_action
 import numpy as np
 from numpy.ma.core import argmax
 

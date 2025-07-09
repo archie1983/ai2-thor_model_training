@@ -3,7 +3,7 @@ import pickle
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
-from . import action_to_index
+from training_data_extraction import action_to_index
 
 class HabitatDataset(Dataset):
     def __init__(self, pickle_files, hp, image_dir, transform=None):

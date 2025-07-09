@@ -54,31 +54,3 @@ habitat_pics_transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
-
-# Define actions that we have to move around the agent
-action_mapping = {
-    'RotateLeft': 0,
-    'RotateRight': 1,
-    'MoveAhead': 2,
-    'STOP': 3,
-    # Add more actions as needed
-}
-
-# An inverted action_mapping dictionary
-inverted_action_mapping = {v: k for k, v in action_mapping.items()}
-
-##
-# Easily look up action of the given index
-##
-def index_to_action(index):
-    return inverted_action_mapping.get(index, 'NONE')
-
-##
-# Easily look up the index of the given action
-##
-def action_to_index(action):
-    """
-    Helper function to convert action strings to indices.
-    You can customize this based on your specific actions.
-    """
-    return action_mapping.get(action, -1)  # Return -1 for unknown actions

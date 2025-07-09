@@ -1,0 +1,41 @@
+常规运行 train dataset (18968 images)
+nohup torchrun --nnodes=1 --nproc_per_node=1 train.py --model DiT-S/2 --data-path /home/Dataset/test1.tar --num-workers 1 --global-batch-size 32 --ckpt-every 5000 --epochs 2000 > train.log 2>&1 &
+
+小数据集 Small dataset (88 images)
+nohup torchrun --nnodes=1 --nproc_per_node=1 train.py --model DiT-S/8 --data-path /home/Dataset/small.tar --num-workers 1 --global-batch-size 16 --ckpt-every 5000 --epochs 100000 > train.log 2>&1 &
+
+
+# If any problem like cuda version match or not found the gpu
+# Use below environment.yml
+name: DiT
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python >=3.8
+  # 不写 pytorch、torchvision 和 pytorch-cuda 了
+  - pip
+  - pip:
+    - timm
+    - diffusers
+    - accelerate
+    - webdataset
+
+# And use Pip to install cuda related
+pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu120
+
+--nnodes=1               how many node means how many computer
+--nproc_per_node=1       GPU number
+--model DiT-S/2 小型模型   2 stand for Patch size is 2, 2/4/8 and more small, more fast
+--num-workers 1          My webdataset only 1 shard, so only 1 worker
+--ckpt-every 1000        How many step to save a checkpoint.pt
+
+# Check train.log from the last 100 sentences
+tail -100f train.log
+
+A testing command, from a trained model. Note: image-size might be change due to the model size
+python sample.py --model DiT-S/8 --image-size 256 --ckpt /home/DiT/DiT/results/xxxx/checkpoints/model.pt
+
+# For remember the PID in linux to kill
+kill 1676

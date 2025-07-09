@@ -1,3 +1,0 @@
-from training_data_extraction import NavigationTrainingDataExtractor
-ntde = NavigationTrainingDataExtractor()
-ntde.process_1_batch_of_habitats()

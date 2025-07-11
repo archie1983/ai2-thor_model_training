@@ -21,7 +21,7 @@ import torch
 from torch import nn
 from torch import distributions as torchd
 
-
+# pytorch张量转化为numpy数组
 to_np = lambda x: x.detach().cpu().numpy()
 
 
@@ -30,7 +30,7 @@ class Dreamer(nn.Module):
         super(Dreamer, self).__init__()
         self._config = config
         self._logger = logger
-        self._should_log = tools.Every(config.log_every)
+        self._should_log = tools.Every(config.log_every) 
         batch_steps = config.batch_size * config.batch_length
         self._should_train = tools.Every(batch_steps / config.train_ratio)
         self._should_pretrain = tools.Once()
@@ -38,24 +38,24 @@ class Dreamer(nn.Module):
         self._should_expl = tools.Until(int(config.expl_until / config.action_repeat))
         self._metrics = {}
         # this is update step
-        self._step = logger.step // config.action_repeat
-        self._update_count = 0
-        self._dataset = dataset
-        self._wm = models.WorldModel(obs_space, act_space, self._step, config)
-        self._task_behavior = models.ImagBehavior(config, self._wm)
+        self._step = logger.step // config.action_repeat # 当前的step
+        self._dataset = dataset #episode数据，包含reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
+        self._wm = models.WorldModel(obs_space, act_space, self._step, config) # 世界模型
+        self._task_behavior = models.ImagBehavior(config, self._wm) # 任务行为模型  ImagBehavior是行为模型，它根据世界模型预测的特征来生成动作
         if (
             config.compile and os.name != "nt"
         ):  # compilation is not supported on windows
             self._wm = torch.compile(self._wm)
             self._task_behavior = torch.compile(self._task_behavior)
-        reward = lambda f, s, a: self._wm.heads["reward"](f).mean()
+        reward = lambda f, s, a: self._wm.heads["reward"](f).mean() # 奖励函数  f是特征，s是状态，a是动作
         self._expl_behavior = dict(
             greedy=lambda: self._task_behavior,
             random=lambda: expl.Random(config, act_space),
             plan2explore=lambda: expl.Plan2Explore(config, self._wm, reward),
         )[config.expl_behavior]().to(self._config.device)
+        self._update_count = 0
 
-    def __call__(self, obs, reset, state=None, training=True):
+    def __call__(self, obs, reset, state=None, training=True): # 直接调用响应的函数。训练模式下，训练模型，预测动作，更新模型
         step = self._step
         if training:
             steps = (
@@ -64,19 +64,43 @@ class Dreamer(nn.Module):
                 else self._should_train(step)
             )
             for _ in range(steps):
-                self._train(next(self._dataset))
+                self._train(next(self._dataset))  # 这里就把经验池里的数据送入训练，包含reward
                 self._update_count += 1
                 self._metrics["update_count"] = self._update_count
             if self._should_log(step):
+
+                #                 obs = {
+                #     'orientations': array(...),  # 形状 (4, 14)
+                #     'height': array(...),        # 形状 (4, 1)
+                #     'velocity': array(...),      # 形状 (4, 9)
+                #     'image': array(...),         # 形状 (4, 64, 64, 3)，dtype=uint8
+                #     'is_terminal': array([False, False, False, False]),
+                #     'is_first': array([False, False, False, False])
+                # }
+                # ------------ROXXI： 可视化obs_image--------------------------------
+                # if "image" in obs:
+                #     img = obs["image"][0]  # 取第一个环境的图片，shape (H, W, 3) 或 (64, 64, 3)
+                #     # 如果是 torch tensor，先转为 numpy
+                #     if hasattr(img, 'detach'):
+                #         img = img.detach().cpu().numpy()
+                #     # 检查是否为 (H, W, 3) 格式
+                #     if img.ndim == 3 and img.shape[2] == 3:
+                #         self._logger.image("obs_image", img)
+                #     else:
+                #         print("obs['image'] 不是 (H, W, 3) 格式，实际 shape:", img.shape)
+                # ------------ROXXI： 可视化obs_image--------------------------------
+
+
+
                 for name, values in self._metrics.items():
                     self._logger.scalar(name, float(np.mean(values)))
                     self._metrics[name] = []
                 if self._config.video_pred_log:
                     openl = self._wm.video_pred(next(self._dataset))
                     self._logger.video("train_openl", to_np(openl))
-                self._logger.write(fps=True)
+                self._logger.write(fps=True)  # 训练时打印参数
 
-        policy_output, state = self._policy(obs, state, training)
+        policy_output, state = self._policy(obs, state, training) #输出动作，更新状态
 
         if training:
             self._step += len(reset)
@@ -94,6 +118,7 @@ class Dreamer(nn.Module):
         if self._config.eval_state_mean:
             latent["stoch"] = latent["mean"]
         feat = self._wm.dynamics.get_feat(latent)
+
         if not training:
             actor = self._task_behavior.actor(feat)
             action = actor.mode()
@@ -116,13 +141,14 @@ class Dreamer(nn.Module):
 
     def _train(self, data):
         metrics = {}
-        post, context, mets = self._wm._train(data)
+        # print('roxxi agent_train data:', data)
+        post, context, mets = self._wm._train(data) #这里用到了data里面的reward
         metrics.update(mets)
         start = post
         reward = lambda f, s, a: self._wm.heads["reward"](
             self._wm.dynamics.get_feat(s)
         ).mode()
-        metrics.update(self._task_behavior._train(start, reward)[-1])
+        metrics.update(self._task_behavior._train(start, reward)[-1])  #基于 imagination rollout 的 actor-critic（AC）训练
         if self._config.expl_behavior != "greedy":
             mets = self._expl_behavior.train(start, context, data)[-1]
             metrics.update({"expl_" + key: value for key, value in mets.items()})
@@ -145,6 +171,9 @@ def make_dataset(episodes, config):
 
 def make_env(config, mode, id):
     suite, task = config.task.split("_", 1)
+    # dmc_walker_walk 会被分成 suite="dmc" 和 task="walker_walk"
+
+    # 动作空间包装。离散空间用OneHotAction包装，连续空间用NormalizeActions包装，动作归一化到 [-1, 1]
     if suite == "dmc":
         import envs.dmc as dmc
 
@@ -167,7 +196,7 @@ def make_env(config, mode, id):
             resize=config.resize,
             seed=config.seed + id,
         )
-        env = wrappers.OneHotAction(env)
+        env = wrappers.OneHotAction(env)  
     elif suite == "dmlab":
         import envs.dmlab as dmlab
 
@@ -195,11 +224,14 @@ def make_env(config, mode, id):
         env = wrappers.OneHotAction(env)
     else:
         raise NotImplementedError(suite)
+
+    # 包装环境，添加时间限制、动作选择、唯一ID等
     env = wrappers.TimeLimit(env, config.time_limit)
     env = wrappers.SelectAction(env, key="action")
     env = wrappers.UUID(env)
     if suite == "minecraft":
         env = wrappers.RewardObs(env)
+    print("roxxi: env", env)
     return env
 
 
@@ -224,6 +256,7 @@ def main(config):
     logger = tools.Logger(logdir, config.action_repeat * step)
 
     print("Create envs.")
+    # 加载训练和评估用的 episode 数据
     if config.offline_traindir:
         directory = config.offline_traindir.format(**vars(config))
     else:
@@ -244,8 +277,11 @@ def main(config):
         train_envs = [Damy(env) for env in train_envs]
         eval_envs = [Damy(env) for env in eval_envs]
     acts = train_envs[0].action_space
-    print("Action Space", acts)
+    print("roxxi: train_envs", train_envs)
     config.num_actions = acts.n if hasattr(acts, "n") else acts.shape[0]
+    # crafter: 17 actions
+    # dmc_vision: 6 actions
+
 
     state = None
     if not config.offline_traindir:
@@ -269,6 +305,7 @@ def main(config):
             logprob = random_actor.log_prob(action)
             return {"action": action, "logprob": logprob}, None
 
+        # 生成随机动作
         state = tools.simulate(
             random_agent,
             train_envs,
@@ -278,10 +315,14 @@ def main(config):
             limit=config.dataset_size,
             steps=prefill,
         )
+        # print("roxxi:", random_agent)
+        # state:(step - steps, episode - episodes, done, length, obs, agent_state, reward)
+        # print("Roxxi:", state)
         logger.step += prefill * config.action_repeat
         print(f"Logger: ({logger.step} steps).")
 
     print("Simulate agent.")
+    # train_eps: 训练数据集 包含reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
     train_dataset = make_dataset(train_eps, config)
     eval_dataset = make_dataset(eval_eps, config)
     agent = Dreamer(
@@ -291,6 +332,8 @@ def main(config):
         logger,
         train_dataset,
     ).to(config.device)
+    # agent: Dreamer类，输出是网络
+    # print("roxxi agent:", agent)
     agent.requires_grad_(requires_grad=False)
     if (logdir / "latest.pt").exists():
         checkpoint = torch.load(logdir / "latest.pt")
@@ -299,34 +342,39 @@ def main(config):
         agent._should_pretrain._once = False
 
     # make sure eval will be executed once after config.steps
+    # ---------------------------start training-----------------------------------
     while agent._step < config.steps + config.eval_every:
-        logger.write()
+        logger.write()    # print了step数，打印训练参数
+        # 满足条件后评估
         if config.eval_episode_num > 0:
             print("Start evaluation.")
             eval_policy = functools.partial(agent, training=False)
             tools.simulate(
-                eval_policy,
+                eval_policy,  # 传入只评估的agent
                 eval_envs,
                 eval_eps,
                 config.evaldir,
                 logger,
                 is_eval=True,
                 episodes=config.eval_episode_num,
-            )
+            ) # 用 agent 在评估环境上跑若干条 episode，收集评估数据
             if config.video_pred_log:
                 video_pred = agent._wm.video_pred(next(eval_dataset))
                 logger.video("eval_openl", to_np(video_pred))
+                
         print("Start training.")
         state = tools.simulate(
-            agent,
+            agent,  # 传入训练的agent
             train_envs,
-            train_eps,
+            train_eps,  # cache
             config.traindir,
             logger,
             limit=config.dataset_size,
             steps=config.eval_every,
             state=state,
         )
+        # print("roxxi: state", state)
+        # print("roxxi: state.size", )
         items_to_save = {
             "agent_state_dict": agent.state_dict(),
             "optims_state_dict": tools.recursively_collect_optim_state_dict(agent),
@@ -338,14 +386,14 @@ def main(config):
         except Exception:
             pass
 
-
+# python3 dreamer.py --configs dmc_vision --task dmc_walker_walk --logdir ./logdir/dmc_walker_walk
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--configs", nargs="+")
     args, remaining = parser.parse_known_args()
     configs = yaml.safe_load(
         (pathlib.Path(sys.argv[0]).parent / "configs.yaml").read_text()
-    )
+    ) #存放不同数据集对应的设置
 
     def recursive_update(base, update):
         for key, value in update.items():
@@ -355,7 +403,7 @@ if __name__ == "__main__":
                 base[key] = value
 
     name_list = ["defaults", *args.configs] if args.configs else ["defaults"]
-    defaults = {}
+    defaults = {}  # 存放config里面的设置
     for name in name_list:
         recursive_update(defaults, configs[name])
     parser = argparse.ArgumentParser()

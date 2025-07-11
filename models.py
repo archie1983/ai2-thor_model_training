@@ -33,6 +33,7 @@ class WorldModel(nn.Module):
         self._use_amp = True if config.precision == 16 else False
         self._config = config
         shapes = {k: tuple(v.shape) for k, v in obs_space.spaces.items()}
+        print("roxxi: wm's shapes", shapes)
         self.encoder = networks.MultiEncoder(shapes, **config.encoder)
         self.embed_size = self.encoder.outdim
         self.dynamics = networks.RSSM(
@@ -137,7 +138,7 @@ class WorldModel(nn.Module):
                         preds[name] = pred
                 losses = {}
                 for name, pred in preds.items():
-                    loss = -pred.log_prob(data[name])
+                    loss = -pred.log_prob(data[name])   # 计算损失 pred 是 reward head 的分布，data["reward"] 是真实reward
                     assert loss.shape == embed.shape[:2], (name, loss.shape)
                     losses[name] = loss
                 scaled = {

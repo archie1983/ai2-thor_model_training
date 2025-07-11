@@ -128,7 +128,7 @@ class Logger:
 def simulate(
     agent,
     envs,
-    cache,
+    cache,  # episode缓存，train_eps包括reward
     directory,
     logger,
     is_eval=False,
@@ -147,6 +147,8 @@ def simulate(
         reward = [0] * len(envs)
     else:
         step, episode, done, length, obs, agent_state, reward = state
+
+
     while (steps and step < steps) or (episodes and episode < episodes):
         # reset envs if necessary
         if done.any():
@@ -163,9 +165,18 @@ def simulate(
                 add_to_cache(cache, envs[index].id, t)
                 # replace obs with done by initial state
                 obs[index] = result
-        # step agents
+
+        # ------------------------step agents-------------------------------------
+        # 
         obs = {k: np.stack([o[k] for o in obs]) for k in obs[0] if "log_" not in k}
+        # print("roxxi obs:", obs)
         action, agent_state = agent(obs, done, agent_state)
+        # agent。policy根据观测的环境输出动作，action为ac决定的动作
+        # state为rssm的状态，state（latent，actions），latent就包含stoch和deter
+        # print("roxxi action(agent.policy_out):", action)
+        # print("roxxi agent_state:", agent_state)
+        # -------------------------step agents------------------------------------
+
         if isinstance(action, dict):
             action = [
                 {k: np.array(action[k][i].detach().cpu()) for k in action}
@@ -174,10 +185,17 @@ def simulate(
         else:
             action = np.array(action)
         assert len(action) == len(envs)
-        # step envs
+
+        # -----------------------------step envs--------------------------------
+        #   这里开始交互环境
+        # 如dmc环境，step返回的results是（obs, reward, done, info），info包含discount
         results = [e.step(a) for e, a in zip(envs, action)]
         results = [r() for r in results]
+        # print("roxxi results:", results)
         obs, reward, done = zip(*[p[:3] for p in results])
+        # -----------------------------step envs--------------------------------
+
+
         obs = list(obs)
         reward = list(reward)
         done = np.stack(done)
@@ -194,15 +212,17 @@ def simulate(
                 transition.update(a)
             else:
                 transition["action"] = a
-            transition["reward"] = r
+            transition["reward"] = r  # 这里把reward放进去了cache
             transition["discount"] = info.get("discount", np.array(1 - float(d)))
             add_to_cache(cache, env.id, transition)
 
+        # -----------------------------episode done--------------------------------
         if done.any():
             indices = [index for index, d in enumerate(done) if d]
             # logging for done episode
             for i in indices:
                 save_episodes(directory, {envs[i].id: cache[envs[i].id]})
+                # episode结束后，cache（包含reward），保存为npz文件并写入train_eps经验池
                 length = len(cache[envs[i].id]["reward"]) - 1
                 score = float(np.array(cache[envs[i].id]["reward"]).sum())
                 video = cache[envs[i].id]["image"]

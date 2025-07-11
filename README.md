@@ -4,6 +4,8 @@ Pytorch implementation of [Mastering Diverse Domains through World Models](https
 ## Instructions
 
 ### Method 1: Manual
+Roxxi: Get dependencies with conda_env
+TODO: maybe some conflict on submodule "thortils"
 
 Get dependencies with python 3.11:
 ```

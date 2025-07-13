@@ -1,4 +1,4 @@
-from .ai2_thor_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
+from ai2_thor_model_training.training_data_extraction.ai2_thor_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
                             get_rooms_ground_truth,
                             get_visible_objects_from_collection,
                             get_all_objects, get_all_objects_of_type,
@@ -6,6 +6,7 @@ from .ai2_thor_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
                             room_this_point_belongs_to, angle_to_turn_to_face_p2_from_p1,
                             convert_pose_set2tuple, normalize_colors, action_mapping, inverted_action_mapping,
                             action_to_index, index_to_action)
+
 __all__ = ["AI2THORUtils", "is_point_inside_room_ground_truth",
                             "get_rooms_ground_truth",
                             "get_visible_objects_from_collection",

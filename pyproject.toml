@@ -9,13 +9,16 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     # Add your actual dependencies here, e.g.:
-    "torch",
     "numpy",
     "matplotlib",
     "ai2thor",
     "tqdm",
     "opencv-python",
     "Pillow",
+    "shapely",
+    "prior",
+    "ai2thor_colab",
+    "moviepy==1.0.3"
 ]
 
 [project.optional-dependencies]
@@ -23,7 +26,8 @@ dev = [
     "pytest",
     "black",
     "ipykernel",
-    "jupyterlab"
+    "jupyterlab",
+    "torch"
 ]
 
 [build-system]
@@ -31,4 +35,4 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["ai2_thor_model_training", "thortils.thortils"]
+packages = ["ai2_thor_model_training", "thortils"]

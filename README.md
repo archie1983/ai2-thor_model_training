@@ -2,7 +2,9 @@ The project relies on [AI2-THOR](https://github.com/allenai/ai2thor) and [ProcTH
 
 Please download and install them before running this code. The AI2-THOR used is v5.0.0.
 
-You must also install Thortils version from the referenced repository in the git submodule here. The vanilla Thortils will not work as I made several important changes. The best way to do that is to set up a conda environment for this purpose and install Thortils using:
+You must also install Thortils version from the referenced repository in the git submodule here. The vanilla Thortils will not work as I made several important changes. The best way to do that is to set up a conda environment for this purpose and install Thortils using the commands below.
+
+Alternatively you can install the whole code as a package, but Thortils still must be installed first.
 
 ```
 git clone https://github.com/archie1983/ai2-thor_model_training
@@ -11,6 +13,11 @@ git submodule init
 git submodule update
 cd thortils
 pip install --no-cache-dir -e .
+```
+Optional, but allows using from everywhere:
+```
+cd ../
+pip install -e .
 ```
 
 To demonstrate our approach, there are three main scripts- all very basic and can be copy-pasted into a jupyter notebook or run from terminal. The real code is deeper in the **training_data_extraction**, **model_training** and **model_navigation** packages.

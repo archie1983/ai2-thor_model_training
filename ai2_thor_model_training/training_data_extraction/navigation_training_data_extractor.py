@@ -12,7 +12,6 @@ from thortils.utils import roundany
 from thortils.controller import _resolve
 from thortils.object import thor_closest_object_of_type, thor_visible_objects
 from . import RobotNavigationControl
-from ae_utils import RoomType
 from thortils.scene import ThorSceneInfo
 from thortils.map3d import Mapper3D
 
@@ -26,7 +25,7 @@ import numpy as np
 
 from PIL import Image
 import copy
-from ae_utils import (get_rooms_ground_truth,
+from ai2_thor_model_training.ae_utils import (RoomType, get_rooms_ground_truth,
                             get_visible_objects_from_collection,
                             get_all_objects, get_all_objects_of_type,
                             get_path_length, get_centre_of_the_room,

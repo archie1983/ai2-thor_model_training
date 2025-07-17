@@ -1,3 +1,3 @@
-from training_data_extraction import NavigationTrainingDataExtractor
+from ai2_thor_model_training.training_data_extraction import NavigationTrainingDataExtractor
 ntde = NavigationTrainingDataExtractor()
 ntde.process_1_batch_of_habitats()

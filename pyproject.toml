@@ -1,6 +1,6 @@
 [project]
 name = "ai2-thor-model-training"
-version = "0.1.0"
+version = "1.0.1"
 description = "Training and navigation tools using AI2-THOR with custom neural networks"
 authors = [
   { name = "Your Name", email = "your.email@example.com" }

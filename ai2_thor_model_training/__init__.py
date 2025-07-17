@@ -1,4 +1,4 @@
-from ai2_thor_model_training.training_data_extraction.ai2_thor_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
+from ai2_thor_model_training.ae_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
                             get_rooms_ground_truth,
                             get_visible_objects_from_collection,
                             get_all_objects, get_all_objects_of_type,

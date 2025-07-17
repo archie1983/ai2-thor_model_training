@@ -20,8 +20,9 @@ class NNPerformanceAnalyzer():
         total_correct = None
         gt = None
 
-        scenes_to_evaluate = [501, 502, 503, 504, 505, 610, 506, 515, 510]
+        #scenes_to_evaluate = [501, 502, 503, 504, 505, 610, 506, 515, 510]
         #scenes_to_evaluate = [400, 401, 402, 403, 404, 405, 406, 407, 408, 409]
+        scenes_to_evaluate = [1, 2]
 
         for scene_id in scenes_to_evaluate:
             (habitat_errors, habitat_correct, habitat_gt) = self.process_training_scenes_in_habitat(scene_id)

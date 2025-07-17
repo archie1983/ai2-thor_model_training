@@ -11,7 +11,8 @@ from thortils.agent import thor_reachable_positions, thor_agent_position, thor_a
 from thortils.utils import roundany
 from thortils.controller import _resolve
 from thortils.object import thor_closest_object_of_type, thor_visible_objects
-from . import RobotNavigationControl, RoomType
+from . import RobotNavigationControl
+from ae_utils import RoomType
 from thortils.scene import ThorSceneInfo
 from thortils.map3d import Mapper3D
 
@@ -25,7 +26,7 @@ import numpy as np
 
 from PIL import Image
 import copy
-from . import (get_rooms_ground_truth,
+from ae_utils import (get_rooms_ground_truth,
                             get_visible_objects_from_collection,
                             get_all_objects, get_all_objects_of_type,
                             get_path_length, get_centre_of_the_room,
@@ -48,8 +49,8 @@ class NavigationTrainingDataExtractor:
         self.rooms_in_habitat = None
 
         self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
-        self.NUMBER_OF_HABITATS_IN_BATCH = 300 # 55 # how many habitats in one go do we want to explore
-        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 1000 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
+        self.NUMBER_OF_HABITATS_IN_BATCH = 2 # 55 # how many habitats in one go do we want to explore
+        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 2 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
 
         ## figure out where are we running- in terminal or jupyter
         if not self.is_running_in_jupyter():

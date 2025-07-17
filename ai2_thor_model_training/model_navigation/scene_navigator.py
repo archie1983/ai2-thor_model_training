@@ -1,5 +1,6 @@
 from . import SceneAnalyzer, FuzzyNavigationController
-from training_data_extraction import RobotNavigationControl, AI2THORUtils
+from training_data_extraction import RobotNavigationControl
+from ae_utils import AI2THORUtils
 from thortils import launch_controller
 from thortils.utils.math import sep_spatial_sample
 import thortils as tt

@@ -3,7 +3,7 @@ from numpy.ma.core import argmax
 from torch import softmax
 
 from model_training import load_model_architecture, habitat_pics_transform
-from training_data_extraction import index_to_action
+from ae_utils import index_to_action
 from PIL import Image
 
 ##

@@ -16,4 +16,4 @@ __all__ = ["AI2THORUtils", "is_point_inside_room_ground_truth",
                             "convert_pose_set2tuple", "normalize_colors", "action_mapping", "inverted_action_mapping",
                             "action_to_index", "index_to_action"]
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

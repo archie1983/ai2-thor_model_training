@@ -60,7 +60,13 @@ class DeepMindControl:
         obs["is_first"] = time_step.first()
         done = time_step.last()
         info = {"discount": np.array(time_step.discount, np.float32)}
+
+
+        # print("ROXXI: obs:", obs)
         return obs, reward, done, info
+        # obs: dict, reward: float64, done: bool, info: dict
+        # obs: {orientations, height, velocity, image, is_first, is_terminal}  
+        # 2 "is flag" are bool. others are np.float32 or np.ndarray
 
     def reset(self):
         time_step = self._env.reset()

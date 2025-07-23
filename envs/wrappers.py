@@ -60,6 +60,7 @@ class OneHotAction(gym.Wrapper):
         reference[index] = 1
         if not np.allclose(reference, action):
             raise ValueError(f"Invalid one-hot action:\n{action}")
+        # print(f"ROXXI:"OneHotAction step index:{index}")
         return self.env.step(index)
 
     def reset(self):

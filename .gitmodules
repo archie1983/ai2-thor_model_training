@@ -1,3 +1,4 @@
-[submodule "thortils"]
-	path = thortils
-	url = https://github.com/原作者/thortils.git
+[submodule "ai2thor_utils"]
+	path = ai2thor_utils
+	url = https://github.com/archie1983/ai2-thor_model_training.git
+	branch = AE_Branch

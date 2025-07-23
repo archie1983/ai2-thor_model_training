@@ -25,6 +25,9 @@ from torch import distributions as torchd
 to_np = lambda x: x.detach().cpu().numpy()
 
 
+# python3 dreamer.py --configs ai2thor --task ai2thor_nav --logdir ./logdir/ai2thor_nav_$(date +%Y%m%d_%H%M%S)  --prefill 0 --video_pred_log False --eval_episode_num 0
+# python3 dreamer.py --configs ai2thor --task ai2thor_nav --logdir ./logdir/ai2thor_nav
+
 class Dreamer(nn.Module):
     def __init__(self, obs_space, act_space, config, logger, dataset):
         super(Dreamer, self).__init__()
@@ -39,7 +42,7 @@ class Dreamer(nn.Module):
         self._metrics = {}
         # this is update step
         self._step = logger.step // config.action_repeat # 当前的step
-        self._dataset = dataset #episode数据，包含reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
+        self._dataset = dataset #generator, episode数据，包含reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
         self._wm = models.WorldModel(obs_space, act_space, self._step, config) # 世界模型
         self._task_behavior = models.ImagBehavior(config, self._wm) # 任务行为模型  ImagBehavior是行为模型，它根据世界模型预测的特征来生成动作
         if (
@@ -57,50 +60,35 @@ class Dreamer(nn.Module):
 
     def __call__(self, obs, reset, state=None, training=True): # 直接调用响应的函数。训练模式下，训练模型，预测动作，更新模型
         step = self._step
+        # print(f"ROXXI: calling agent dreamer")
         if training:
             steps = (
                 self._config.pretrain
                 if self._should_pretrain()
                 else self._should_train(step)
-            )
+            ) # defult 100
+            # print("a ", steps)
             for _ in range(steps):
-                self._train(next(self._dataset))  # 这里就把经验池里的数据送入训练，包含reward
+                data = next(self._dataset)
+                # print("ROXXI: data:", data)
+                self._train(data)  # 这里就把经验池里的数据送入训练，包含reward
                 self._update_count += 1
                 self._metrics["update_count"] = self._update_count
+            # print("b")
             if self._should_log(step):
-
-                #                 obs = {
-                #     'orientations': array(...),  # 形状 (4, 14)
-                #     'height': array(...),        # 形状 (4, 1)
-                #     'velocity': array(...),      # 形状 (4, 9)
-                #     'image': array(...),         # 形状 (4, 64, 64, 3)，dtype=uint8
-                #     'is_terminal': array([False, False, False, False]),
-                #     'is_first': array([False, False, False, False])
-                # }
-                # ------------ROXXI： 可视化obs_image--------------------------------
-                # if "image" in obs:
-                #     img = obs["image"][0]  # 取第一个环境的图片，shape (H, W, 3) 或 (64, 64, 3)
-                #     # 如果是 torch tensor，先转为 numpy
-                #     if hasattr(img, 'detach'):
-                #         img = img.detach().cpu().numpy()
-                #     # 检查是否为 (H, W, 3) 格式
-                #     if img.ndim == 3 and img.shape[2] == 3:
-                #         self._logger.image("obs_image", img)
-                #     else:
-                #         print("obs['image'] 不是 (H, W, 3) 格式，实际 shape:", img.shape)
-                # ------------ROXXI： 可视化obs_image--------------------------------
-
-
-
                 for name, values in self._metrics.items():
                     self._logger.scalar(name, float(np.mean(values)))
                     self._metrics[name] = []
                 if self._config.video_pred_log:
                     openl = self._wm.video_pred(next(self._dataset))
                     self._logger.video("train_openl", to_np(openl))
+                print("ROXXI: Calling agent print metrics")
                 self._logger.write(fps=True)  # 训练时打印参数
-
+            # print("c")
+        # print("ROXXI: start agent policy")
         policy_output, state = self._policy(obs, state, training) #输出动作，更新状态
+        # print("ROXXI: end agent policy")
+
 
         if training:
             self._step += len(reset)
@@ -142,7 +130,7 @@ class Dreamer(nn.Module):
     def _train(self, data):
         metrics = {}
         # print('roxxi agent_train data:', data)
-        post, context, mets = self._wm._train(data) #这里用到了data里面的reward
+        post, context, mets = self._wm._train(data) #
         metrics.update(mets)
         start = post
         reward = lambda f, s, a: self._wm.heads["reward"](
@@ -164,7 +152,7 @@ def count_steps(folder):
 
 
 def make_dataset(episodes, config):
-    generator = tools.sample_episodes(episodes, config.batch_length)
+    generator = tools.sample_episodes(episodes, config.batch_length)  # 生成的generator卡在这里了
     dataset = tools.from_generator(generator, config.batch_size)
     return dataset
 
@@ -222,6 +210,10 @@ def make_env(config, mode, id):
 
         env = minecraft.make_env(task, size=config.size, break_speed=config.break_speed)
         env = wrappers.OneHotAction(env)
+    elif suite == "ai2thor":
+        import envs.ai2thor_env as ai2thor_env
+        env = ai2thor_env.AI2ThorEnv(config)
+        env = wrappers.OneHotAction(env)  # 适用于离散动作空间
     else:
         raise NotImplementedError(suite)
 
@@ -231,7 +223,6 @@ def make_env(config, mode, id):
     env = wrappers.UUID(env)
     if suite == "minecraft":
         env = wrappers.RewardObs(env)
-    print("roxxi: env", env)
     return env
 
 
@@ -255,6 +246,8 @@ def main(config):
     # step in logger is environmental step
     logger = tools.Logger(logdir, config.action_repeat * step)
 
+
+    #---------------------------------create envs---------------------------------
     print("Create envs.")
     # 加载训练和评估用的 episode 数据
     if config.offline_traindir:
@@ -262,11 +255,17 @@ def main(config):
     else:
         directory = config.traindir
     train_eps = tools.load_episodes(directory, limit=config.dataset_size)
+    print(f"Train episodes loaded.")
+    # TODO what is episode means? it stored by npz file.
     if config.offline_evaldir:
         directory = config.offline_evaldir.format(**vars(config))
     else:
         directory = config.evaldir
     eval_eps = tools.load_episodes(directory, limit=1)
+    print(f"Eval episodes loaded.")
+    # directory: logdir/ai2thor_nav_20250717_182842/train_eps
+
+
     make = lambda mode, id: make_env(config, mode, id)
     train_envs = [make("train", i) for i in range(config.envs)]
     eval_envs = [make("eval", i) for i in range(config.envs)]
@@ -277,12 +276,14 @@ def main(config):
         train_envs = [Damy(env) for env in train_envs]
         eval_envs = [Damy(env) for env in eval_envs]
     acts = train_envs[0].action_space
-    print("roxxi: train_envs", train_envs)
+    # print(f"acts:{acts}")
     config.num_actions = acts.n if hasattr(acts, "n") else acts.shape[0]
     # crafter: 17 actions
     # dmc_vision: 6 actions
+    #---------------------------------create envs---------------------------------
 
-
+    
+    #--------------------------------- Prefill------------------------------------
     state = None
     if not config.offline_traindir:
         prefill = max(0, config.prefill - count_steps(config.traindir))
@@ -315,7 +316,6 @@ def main(config):
             limit=config.dataset_size,
             steps=prefill,
         )
-        # print("roxxi:", random_agent)
         # state:(step - steps, episode - episodes, done, length, obs, agent_state, reward)
         # print("Roxxi:", state)
         logger.step += prefill * config.action_repeat
@@ -325,6 +325,8 @@ def main(config):
     # train_eps: 训练数据集 包含reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
     train_dataset = make_dataset(train_eps, config)
     eval_dataset = make_dataset(eval_eps, config)
+
+    # print(f"train_envs:{train_envs} | train_envs[0 ]:{train_envs[0]} | train_envs[0].observation_space:{train_envs[0].observation_space} | train_envs[0].action_space:{train_envs[0].action_space}")
     agent = Dreamer(
         train_envs[0].observation_space,
         train_envs[0].action_space,
@@ -332,8 +334,10 @@ def main(config):
         logger,
         train_dataset,
     ).to(config.device)
-    # agent: Dreamer类，输出是网络
-    # print("roxxi agent:", agent)
+    print("Simulate agent done.")
+
+
+    
     agent.requires_grad_(requires_grad=False)
     if (logdir / "latest.pt").exists():
         checkpoint = torch.load(logdir / "latest.pt")
@@ -344,7 +348,9 @@ def main(config):
     # make sure eval will be executed once after config.steps
     # ---------------------------start training-----------------------------------
     while agent._step < config.steps + config.eval_every:
-        logger.write()    # print了step数，打印训练参数
+        # print("ROXXI: Calling training print metrics")
+        logger.write()    # 仅仅print了step数，打印训练参数
+        # print(f"ROXXI:step:{agent._step} | state:{state}")
         # 满足条件后评估
         if config.eval_episode_num > 0:
             print("Start evaluation.")
@@ -373,8 +379,7 @@ def main(config):
             steps=config.eval_every,
             state=state,
         )
-        # print("roxxi: state", state)
-        # print("roxxi: state.size", )
+        print("End training.")
         items_to_save = {
             "agent_state_dict": agent.state_dict(),
             "optims_state_dict": tools.recursively_collect_optim_state_dict(agent),
@@ -389,7 +394,7 @@ def main(config):
 # python3 dreamer.py --configs dmc_vision --task dmc_walker_walk --logdir ./logdir/dmc_walker_walk
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--configs", nargs="+")
+    parser.add_argument("--configs", nargs="+", default=["ai2thor"])
     args, remaining = parser.parse_known_args()
     configs = yaml.safe_load(
         (pathlib.Path(sys.argv[0]).parent / "configs.yaml").read_text()

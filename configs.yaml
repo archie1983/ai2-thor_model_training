@@ -1,6 +1,6 @@
 defaults:
 
-  logdir: "./logdir/dmc_walker_walk"
+  logdir: "./logdir/ai2thor_nav/1" #./logdir/dmc_walker_walk"
   traindir: null
   evaldir: null
   offline_traindir: ''
@@ -10,23 +10,23 @@ defaults:
   steps: 1e6
   parallel: False
   eval_every: 1e4
-  eval_episode_num: 10
+  eval_episode_num: 10 #10
   log_every: 1e4
   reset_every: 0
   device: 'cuda:0'
   compile: True
   precision: 32
   debug: False
-  video_pred_log: True
+  video_pred_log: False #True
 
   # Environment
-  task: 'dmc_walker_walk'
+  task: 'ai2thor_nav'
   size: [64, 64]
   envs: 1
   action_repeat: 2
   time_limit: 1000
   grayscale: False
-  prefill: 2500
+  prefill: 2500 #2500
   reward_EMA: True
 
   # Model
@@ -182,3 +182,10 @@ debug:
   prefill: 1
   batch_size: 10
   batch_length: 20
+
+ai2thor:
+  size: [64, 64]
+  scene: "FloorPlan1"
+  habitat_id: 831
+  action_list: ["MoveAhead", "RotateLeft", "RotateRight"]
+  actor: {dist: 'onehot', std: 'none'}

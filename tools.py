@@ -11,7 +11,7 @@ import random
 import numpy as np
 
 import torch
-from torch import nn
+from torch import Size, nn
 from torch.nn import functional as F
 from torch import distributions as torchd
 from torch.utils.tensorboard import SummaryWriter
@@ -128,7 +128,7 @@ class Logger:
 def simulate(
     agent,
     envs,
-    cache,  # episode缓存，train_eps包括reward
+    cache,  # 经验缓存replay buffer。是用来保存为episodes文件的
     directory,
     logger,
     is_eval=False,
@@ -137,6 +137,8 @@ def simulate(
     episodes=0,
     state=None,
 ):
+    # print("ROXXI: simulate start!")
+
     # initialize or unpack simulation state
     if state is None:
         step, episode = 0, 0
@@ -148,13 +150,19 @@ def simulate(
     else:
         step, episode, done, length, obs, agent_state, reward = state
 
-
     while (steps and step < steps) or (episodes and episode < episodes):
         # reset envs if necessary
-        if done.any():
+        # print(f"ROXXI: step:{step} | episode:{episode} | steps:{steps} | episodes:{episodes}")
+        # print(f"ROXXI: done:{done} | length:{length} | reward:{reward}")
+        # 如果done为True，则envs.reset done:[True][False]
+        if done.any(): 
             indices = [index for index, d in enumerate(done) if d]
             results = [envs[i].reset() for i in indices]
+            # print("ROXXI: a: Agent envs RESET!--------------------------------------------")
+            # print("ROXXI: ", done)
             results = [r() for r in results]
+
+            # print("ROXXI: RESET envs done!")
             for index, result in zip(indices, results):
                 t = result.copy()
                 t = {k: convert(v) for k, v in t.items()}
@@ -167,14 +175,13 @@ def simulate(
                 obs[index] = result
 
         # ------------------------step agents-------------------------------------
-        # 
+        # print("ROXXI: step agents start!")
         obs = {k: np.stack([o[k] for o in obs]) for k in obs[0] if "log_" not in k}
-        # print("roxxi obs:", obs)
         action, agent_state = agent(obs, done, agent_state)
-        # agent。policy根据观测的环境输出动作，action为ac决定的动作
+        # print(f"ROXXI: b: step agents done!--------------------------------------------")
+        # print("ROXXI: ", done)
+        # agent policy根据观测的环境输出动作，action为ac决定的动作
         # state为rssm的状态，state（latent，actions），latent就包含stoch和deter
-        # print("roxxi action(agent.policy_out):", action)
-        # print("roxxi agent_state:", agent_state)
         # -------------------------step agents------------------------------------
 
         if isinstance(action, dict):
@@ -191,18 +198,20 @@ def simulate(
         # 如dmc环境，step返回的results是（obs, reward, done, info），info包含discount
         results = [e.step(a) for e, a in zip(envs, action)]
         results = [r() for r in results]
-        # print("roxxi results:", results)
+        # print("ROXXI: c: step envs done!--------------------------------------------")
+        # print("ROXXI: ", done)
         obs, reward, done = zip(*[p[:3] for p in results])
         # -----------------------------step envs--------------------------------
 
-
+        # tuple to list
         obs = list(obs)
         reward = list(reward)
-        done = np.stack(done)
+        done = np.stack(done)  # np.ndarray
         episode += int(done.sum())
         length += 1
         step += len(envs)
-        length *= 1 - done
+        length *= 1 - done  # np.ndarray
+        # print("ROXXI:", type(obs), type(reward), type(done), type(length), type(step), type(episode))
         # add to cache
         for a, result, env in zip(action, results, envs):
             o, r, d, info = result
@@ -212,12 +221,15 @@ def simulate(
                 transition.update(a)
             else:
                 transition["action"] = a
-            transition["reward"] = r  # 这里把reward放进去了cache
+            transition["reward"] = r  
             transition["discount"] = info.get("discount", np.array(1 - float(d)))
-            add_to_cache(cache, env.id, transition)
+            # transition{image, is_frist, is_terminal,action, logprob,reward, discount}  ALL np.ndarray
+            add_to_cache(cache, env.id, transition) # 这里把result放进去了cache(经验缓存replay buffer)
 
         # -----------------------------episode done--------------------------------
         if done.any():
+            print("ROXXI: d: saving episode!--------------------------------------------")
+            print("ROXXI: ", done)
             indices = [index for index, d in enumerate(done) if d]
             # logging for done episode
             for i in indices:
@@ -234,7 +246,7 @@ def simulate(
                         )
                         # log items won't be used later
                         cache[envs[i].id].pop(key)
-
+                # print("ROXXI: is_eval:", is_eval)
                 if not is_eval:
                     step_in_dataset = erase_over_episodes(cache, limit)
                     logger.scalar(f"dataset_size", step_in_dataset)
@@ -266,6 +278,7 @@ def simulate(
         while len(cache) > 1:
             # FIFO
             cache.popitem(last=False)
+    # print(f"return:(step - steps, episode - episodes, done, length, obs, agent_state, reward):{step - steps, episode - episodes, done, length, obs, agent_state, reward}")
     return (step - steps, episode - episodes, done, length, obs, agent_state, reward)
 
 
@@ -273,6 +286,7 @@ def add_to_cache(cache, id, transition):
     if id not in cache:
         cache[id] = dict()
         for key, val in transition.items():
+            # print("ROXXI: key:", key, "type:", type(convert(val)))
             cache[id][key] = [convert(val)]
     else:
         for key, val in transition.items():
@@ -339,8 +353,19 @@ def from_generator(generator, batch_size):
             data[key] = np.stack(data[key], 0)
         yield data
 
-
+# create data generator
 def sample_episodes(episodes, length, seed=0):
+    # print("=====================================================================")
+    # # print(type(episodes))
+   
+    # for eid, episode in episodes.items():
+    #     print(f"Episode {eid}:")
+    #     for k, v in episode.items():
+    #         arr = np.array(v)
+    #         print(f"  {k}: shape={arr.shape}, dtype={arr.dtype}, type={type(v)}")
+    # print("=====================================================================") 
+
+    
     np_random = np.random.RandomState(seed)
     while True:
         size = 0
@@ -349,12 +374,21 @@ def sample_episodes(episodes, length, seed=0):
             [len(next(iter(episode.values()))) for episode in episodes.values()]
         )
         p = p / np.sum(p)
-        while size < length:
+        while size < length:  # length = 64 (batch_length)
             episode = np_random.choice(list(episodes.values()), p=p)
-            total = len(next(iter(episode.values())))
+            v = episode.values()
+            total = len(next(iter(v)))
+            # print("ROXXI: total:", total)
             # make sure at least one transition included
             if total < 2:
                 continue
+
+
+            # if ret is not None:
+            #     for key, value in ret.items():
+            #         print(f"Key: {key}, Value count: {len(value)}")
+            # ret里keys：image, is_first, is_terminal, action, logprob, reward, discount
+
             if not ret:
                 index = int(np_random.randint(0, total - 1))
                 ret = {
@@ -378,6 +412,7 @@ def sample_episodes(episodes, length, seed=0):
                 if "is_first" in ret:
                     ret["is_first"][size] = True
             size = len(next(iter(ret.values())))
+            # print("ROXXI: size:", size, "length:", size < length)
         yield ret
 
 
@@ -385,9 +420,13 @@ def load_episodes(directory, limit=None, reverse=True):
     directory = pathlib.Path(directory).expanduser()
     episodes = collections.OrderedDict()
     total = 0
+    print(f"ROXXI: episode directory: {directory}")
     if reverse:
+        # print("--------------ROXXI: in reverse")
         for filename in reversed(sorted(directory.glob("*.npz"))):
+            # print(f"ROXXI: filename: {filename}")
             try:
+                # print("ROXXI: try to open episode npz file")
                 with filename.open("rb") as f:
                     episode = np.load(f)
                     episode = {k: episode[k] for k in episode.keys()}
@@ -396,6 +435,7 @@ def load_episodes(directory, limit=None, reverse=True):
                 continue
             # extract only filename without extension
             episodes[str(os.path.splitext(os.path.basename(filename))[0])] = episode
+            # print(f"ROXXI: episode: {episodes}")
             total += len(episode["reward"]) - 1
             if limit and total >= limit:
                 break

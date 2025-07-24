@@ -7,7 +7,7 @@ import pathlib
 import re
 import time
 import random
-
+import cv2
 import numpy as np
 
 import torch
@@ -15,6 +15,7 @@ from torch import Size, nn
 from torch.nn import functional as F
 from torch import distributions as torchd
 from torch.utils.tensorboard import SummaryWriter
+
 
 
 to_np = lambda x: x.detach().cpu().numpy()
@@ -150,6 +151,9 @@ def simulate(
     else:
         step, episode, done, length, obs, agent_state, reward = state
 
+    dreamer_path = []
+    initial_path = []
+    # steps和episodes为0则不限制，否则为输入的限制数
     while (steps and step < steps) or (episodes and episode < episodes):
         # reset envs if necessary
         # print(f"ROXXI: step:{step} | episode:{episode} | steps:{steps} | episodes:{episodes}")
@@ -158,8 +162,8 @@ def simulate(
         if done.any(): 
             indices = [index for index, d in enumerate(done) if d]
             results = [envs[i].reset() for i in indices]
-            # print("ROXXI: a: Agent envs RESET!--------------------------------------------")
-            # print("ROXXI: ", done)
+            dreamer_path = []  # 每个episode开始时清空
+            initial_path = []
             results = [r() for r in results]
 
             # print("ROXXI: RESET envs done!")
@@ -197,21 +201,21 @@ def simulate(
         #   这里开始交互环境
         # 如dmc环境，step返回的results是（obs, reward, done, info），info包含discount
         results = [e.step(a) for e, a in zip(envs, action)]
-        results = [r() for r in results]
-        # print("ROXXI: c: step envs done!--------------------------------------------")
-        # print("ROXXI: ", done)
+        results = [r() for r in results]  # [obs, reward, done, info]取出包
         obs, reward, done = zip(*[p[:3] for p in results])
         # -----------------------------step envs--------------------------------
+        # TODO 这里把path换成info存储，obs会影响训练！！！！@
+        dreamer_path = obs[0].pop("dreamer_path")       
+        initial_path = obs[0].pop("initial_path")
 
         # tuple to list
-        obs = list(obs)
+        obs = list(obs)  # [{}]列表里面有一个obs字典（如果是多个envs是不是就是多个？）
         reward = list(reward)
         done = np.stack(done)  # np.ndarray
         episode += int(done.sum())
         length += 1
         step += len(envs)
         length *= 1 - done  # np.ndarray
-        # print("ROXXI:", type(obs), type(reward), type(done), type(length), type(step), type(episode))
         # add to cache
         for a, result, env in zip(action, results, envs):
             o, r, d, info = result
@@ -228,8 +232,7 @@ def simulate(
 
         # -----------------------------episode done--------------------------------
         if done.any():
-            print("ROXXI: d: saving episode!--------------------------------------------")
-            print("ROXXI: ", done)
+            
             indices = [index for index, d in enumerate(done) if d]
             # logging for done episode
             for i in indices:
@@ -238,6 +241,7 @@ def simulate(
                 length = len(cache[envs[i].id]["reward"]) - 1
                 score = float(np.array(cache[envs[i].id]["reward"]).sum())
                 video = cache[envs[i].id]["image"]
+                # print("ROXXI: Done episode video:", np.array(video).shape)
                 # record logs given from environments
                 for key in list(cache[envs[i].id].keys()):
                     if "log_" in key:
@@ -246,15 +250,14 @@ def simulate(
                         )
                         # log items won't be used later
                         cache[envs[i].id].pop(key)
-                # print("ROXXI: is_eval:", is_eval)
-                if not is_eval:
+                if not is_eval:  # 训练
                     step_in_dataset = erase_over_episodes(cache, limit)
                     logger.scalar(f"dataset_size", step_in_dataset)
                     logger.scalar(f"train_return", score)
                     logger.scalar(f"train_length", length)
                     logger.scalar(f"train_episodes", len(cache))
                     logger.write(step=logger.step)
-                else:
+                else:  # 评估
                     if not "eval_lengths" in locals():
                         eval_lengths = []
                         eval_scores = []
@@ -266,6 +269,40 @@ def simulate(
                     score = sum(eval_scores) / len(eval_scores)
                     length = sum(eval_lengths) / len(eval_lengths)
                     logger.video(f"eval_policy", np.array(video)[None])
+
+                    # -------------------ROXXI ：保存dreamer_path--------------------------------
+
+                    # print("ROXXI: dreamer_path: ", dreamer_path)
+                    # print("ROXXI: initial_path: ", initial_path)
+                    topdown_img = envs[i].get_top_down_frame(dreamer_path, initial_path)
+
+                    topdown_dir = logger._logdir / "topdown"
+                    topdown_dir.mkdir(parents=True, exist_ok=True)
+                    img_name = f"topdown_step_{logger.step}.png"
+                    img_path = topdown_dir / img_name
+                    cv2.imwrite(str(img_path), topdown_img)
+                    print(f"topdown图片已保存: {img_path}")
+
+                    # -------------------ROXXI ：保存视频--------------------------------
+                    video_array = np.array(video)
+                    if video_array.dtype != np.uint8:
+                        video_array = (video_array * 255).astype(np.uint8)
+
+                    video_dir = logger._logdir / "videos"
+                    video_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    video_name = f"step_{logger.step}_{info['target']}.mp4"
+                    video_path = video_dir / video_name
+                    out = cv2.VideoWriter(str(video_path), fourcc, 30, (64, 64))
+
+                    for frame in video_array:
+                        out.write(frame)
+                    out.release()
+
+                    print(f"视频已保存: {video_path}")
+                    print(f"ROXXI: logger.step: {logger.step}")
+                    # -------------------ROXXI ：保存视频--------------------------------
 
                     if len(eval_scores) >= episodes and not eval_done:
                         logger.scalar(f"eval_return", score)
@@ -280,6 +317,7 @@ def simulate(
             cache.popitem(last=False)
     # print(f"return:(step - steps, episode - episodes, done, length, obs, agent_state, reward):{step - steps, episode - episodes, done, length, obs, agent_state, reward}")
     return (step - steps, episode - episodes, done, length, obs, agent_state, reward)
+    # step：总交互数量（减steps是因为step += len(envs)加上了。  episode：总episode数量（减episodes是因为episode += int(done.sum())加上了。
 
 
 def add_to_cache(cache, id, transition):

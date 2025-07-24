@@ -218,7 +218,7 @@ def make_env(config, mode, id):
         raise NotImplementedError(suite)
 
     # 包装环境，添加时间限制、动作选择、唯一ID等
-    env = wrappers.TimeLimit(env, config.time_limit)
+    env = wrappers.TimeLimit(env, config.time_limit)  # 限制一个episode的step数量
     env = wrappers.SelectAction(env, key="action")
     env = wrappers.UUID(env)
     if suite == "minecraft":
@@ -355,6 +355,7 @@ def main(config):
         if config.eval_episode_num > 0:
             print("Start evaluation.")
             eval_policy = functools.partial(agent, training=False)
+            # 评估过程中同时保存dreamer_path和initial path
             tools.simulate(
                 eval_policy,  # 传入只评估的agent
                 eval_envs,
@@ -364,6 +365,9 @@ def main(config):
                 is_eval=True,
                 episodes=config.eval_episode_num,
             ) # 用 agent 在评估环境上跑若干条 episode，收集评估数据
+
+            # 在每次评估结束后画出两个path，并保存视频
+
             if config.video_pred_log:
                 video_pred = agent._wm.video_pred(next(eval_dataset))
                 logger.video("eval_openl", to_np(video_pred))

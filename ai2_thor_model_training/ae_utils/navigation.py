@@ -40,13 +40,16 @@ class AStarNode:
         return self.f < other.f
 
     def __eq__(self, other):
-        return self.x == other.x and self.y == other.y
+        return self.x == other.x and self.y == other.y and self.yaw == other.yaw
 
     def __hash__(self):
-        return hash((self.x, self.y))
+        return hash((self.x, self.y, self.yaw))
 
     def get_xy(self):
         return (self.x, self.y)
+
+    def get_xyr(self):
+        return (self.x, self.y, self.yaw)
 
     def get_ai2thor_pose(self):
         return (self.x, 0.9009993672370911, self.y)
@@ -138,6 +141,16 @@ class NavigationUtils:
     from start point to destination.
     '''
 
+    def __init__(self):
+        # Last path generated
+        self.last_path_gen = None
+
+    def get_last_path_and_params(self):
+        return (self.last_path_gen,
+                self.reachable_positions,
+                self.start_point,
+                self.destination)
+
     ##
     # start_point:  where we start (start_position, start_rotation)
     # target_point: where we want to get to (target_position, target_rotation)
@@ -146,6 +159,7 @@ class NavigationUtils:
     def get_path_cost_to_target_point(self, start_point, target_point, reachable_positions_in):
         destination = ((target_point.x, 0.9009993672370911, target_point.y),
                        start_point[1])
+        print("AE: start_point: ", start_point, " target_point: ", target_point)
         # the defined 2D coordinates and same rotation as start position
         # Normalize angles in start and goal to be within 0 to 360 (see top comments)
         # Also, round the poses so that we don't have irrational numbers in them that would be hard to look up
@@ -157,6 +171,10 @@ class NavigationUtils:
         destination = self.normalize_to_grid(destination)
         # positions that we can reach
         reachable_positions = set(reachable_positions_in)
+        # Save the search parameters in case we want to visualize the path later
+        self.reachable_positions = reachable_positions
+        self.start_point = start_point
+        self.destination = destination
         # The priority queue. We will keep poses in it with the estimates of their distances to the goal stored as priorities.
         worklist = PriorityQueue()
         # First pose will be the start and the estimate to the goal is its priority.
@@ -182,7 +200,39 @@ class NavigationUtils:
             # AE: If we're close enough to the end, then stop exploration and work backwards to reconstruct plan or
             # estimate path cost.
             if euclidean_dist(destination[0], current_node.get_ai2thor_pose()) <= 0.5:
-                return cost[current_node.get_ai2thor_pose_and_rtn()]
+                best_cost = cost[current_node.get_ai2thor_pose_and_rtn()]
+                # here we will store our path
+                self.last_path_gen = []
+                # last pose in path - we need this to detect turns. When we start, it will be None, but for all other
+                # nodes it will be the predecessor - the one we were at before we followed the "parent" link.
+                last_pose_in_path = None
+                # Now work it back
+                while current_node.parent:
+                    if last_pose_in_path:
+                        (_, _, dest) = last_pose_in_path # This is closer to the destination
+                        (_, _, start) = current_node.get_xyr() # This is further from the destination
+                        # Normally we would use here: turning_deg_required = (dest - start + 180) % 360 - 180
+                        # But because we are working our way backwards, this needs to be a reversed list of turning
+                        # steps. Therefore, swap dest and start.
+                        turning_deg_required = (start - dest + 180) % 360 - 180
+                        turn_direction = -1 if turning_deg_required < 0 else 1
+                        print("turning_deg_required: ", turning_deg_required)
+                        # We turn in 45 degree increments, so this many turns we will need
+                        turns_required = abs(turning_deg_required) // 45
+                        old_yaw = dest
+                        print("turns_required: ", turns_required, " dest: ", dest, " start: ", start)
+                        for i in range(turns_required):
+                            new_yaw = old_yaw + turn_direction * 45
+                            self.last_path_gen.append((*current_node.get_xy(), new_yaw))
+                            old_yaw = new_yaw
+
+                    self.last_path_gen.append(current_node.get_xyr())
+                    last_pose_in_path = current_node.get_xyr()
+                    current_node = current_node.parent
+
+                # Reverse it because we started at the destination when working our way back
+                self.last_path_gen.reverse()
+                return best_cost
 
             # AE: Look at all defined actions and try each of them from the current pose and see what happens
             for action in NavigationAction:
@@ -236,3 +286,4 @@ class NavigationUtils:
         """
         yaw = yaw % 360  # Bring into [0, 360)
         return round(yaw / 45) * 45 % 360
+

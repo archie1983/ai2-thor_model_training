@@ -1,9 +1,11 @@
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from . import RoomType
-import math, cv2, prior
+import math, cv2, prior, copy
 from thortils.utils.math import (euclidean_dist, to_deg)
 from thortils.agent import thor_pose_as_tuple
+from PIL import Image
+import matplotlib.pyplot as plt
 
 ##
 # My own utilities functions for AI2-THOR. I couldn't find analogous functions in Thortils,
@@ -13,6 +15,9 @@ from thortils.agent import thor_pose_as_tuple
 class AI2THORUtils:
     def __init__(self):
         self.dataset = None
+        self.path_fig = None
+        self.path_ax = None
+        self.controller = None
 
     ##
     # Get Procthor-10k dataset
@@ -94,6 +99,236 @@ class AI2THORUtils:
             objs_at_this_pos = objs_at_this_pos[2:]
 
         return objs_at_this_pos
+
+    def set_controller(self, controller):
+        self.controller = controller
+
+    def visualise_path2(self, path, reachable_positions, rooms_in_habitat, start, goal):
+        grid_size = self.controller.initialization_parameters["gridSize"]
+
+        all_corners = [corner for room_name, corners, center in rooms_in_habitat for corner in corners]
+        #print("all_corners: ", all_corners)
+
+        x_max = max([pos[0] for pos in all_corners])
+        z_max = max([pos[1] for pos in all_corners])
+        x_min = min([pos[0] for pos in all_corners])
+        z_min = min([pos[1] for pos in all_corners])
+
+        # Use interactive mode to prevent blocking
+        plt.ion()  # Turn on interactive mode
+
+        # Reuse existing figure or create new one
+        if self.path_fig is None or not plt.fignum_exists(self.path_fig.number):
+            self.path_fig, self.path_ax = plt.subplots(figsize=(10, 8))
+            self.path_fig.canvas.manager.set_window_title("AI2-Thor Path Visualization")
+        else:
+            # Clear the existing plot
+            self.path_ax.clear()
+
+        # AE: Debug
+        #event = self.controller.step(action="GetReachablePositions")
+        #r_positions = event.metadata["actionReturn"]
+        #r_positions = [(pos['x'], pos['z']) for pos in r_positions]
+        #print("AE: positions: ", positions)
+
+        #reachable_x = [pos[0] for pos in r_positions]
+        #reachable_y = [pos[1] for pos in r_positions]
+        #self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', alpha=0.5, zorder=4, label='Pstep')
+
+        # Get reachable positions
+        #event = self.controller.step(action="GetReachablePositions")
+        #r_positions = event.metadata["actionReturn"]
+
+        #print(f"Total reachable positions: {len(r_positions)}")
+        #print(f"Sample positions: {r_positions[:5]}")
+
+        # Check the bounds
+        #x_coords = [pos['x'] for pos in r_positions]
+        #z_coords = [pos['z'] for pos in r_positions]
+
+        #print(f"X range: {min(x_coords):.3f} to {max(x_coords):.3f}")
+        #print(f"Z range: {min(z_coords):.3f} to {max(z_coords):.3f}")
+
+        # Get current agent position for reference
+        #agent_pos = self.controller.last_event.metadata["agent"]["position"]
+        #print(f"Agent position: x={agent_pos['x']:.3f}, z={agent_pos['z']:.3f}")
+
+        #for pos in reachable_positions:
+        #    print("pos: ", pos)
+        #    self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', zorder=4, label='Pstep')
+        # Debug done
+
+        # Setting up for the top-down picture of the habitat
+        #print("AE: map size: grid_size: ", grid_size, " x_min: ", x_min, " x_max: ", x_max, " z_min: ", z_min, " z_max: ", z_max)
+        #print("AE: start: ", start, " goal: ", goal)
+        img = self.get_top_down_frame()
+
+        # Problem 2: Fix coordinate alignment
+        # AI2-Thor uses Y-axis flipped compared to matplotlib, so we need to flip the image
+        #img_height, img_width = img.shape[:2]
+
+        # Calculate proper extents based on the actual coordinate system
+        #ex_mul = 7
+        #extent = [x_min - ex_mul * grid_size, x_max + ex_mul * grid_size,
+        #          z_max + ex_mul * grid_size, z_min - ex_mul * grid_size]  # Note: z_max first, then z_min
+
+        extents = [
+            [x_min, x_max, z_min, z_max],  # Normal
+            [x_min, x_max, z_max, z_min],  # Z flipped
+            [-x_max, -x_min, z_min, z_max],  # X flipped
+            [-x_max, -x_min, z_max, z_min],  # Both flipped
+        ]
+
+        self.path_ax.imshow(img, extent=extents[0], origin='upper')  # Use origin='upper' to match coordinate system
+
+        #self.path_ax.scatter([agent_pos['x']], [agent_pos['z']], s=25, c='magenta', zorder=4, label='Agent')
+
+        # Set up for the path print
+        #lim_mul = 4
+        #self.path_ax.set_xlim(x_min - lim_mul * grid_size, x_max + lim_mul * grid_size)
+        #self.path_ax.set_ylim(z_min - lim_mul * grid_size, z_max + lim_mul * grid_size)
+
+        # Start pos (using z instead of y coordinate)
+        xs = start[0][0]  # x coordinate
+        zs = start[0][2]  # z coordinate (not y!)
+        self.path_ax.scatter([xs], [zs], s=100, c='red', zorder=4, label='Start')
+
+        # Goal
+        xg = goal[0][0]  # x coordinate
+        zg = goal[0][2]  # z coordinate (not y!)
+        self.path_ax.scatter([xg], [zg], s=100, c='green', zorder=4, label='Goal')
+
+        # Path
+        for step in path:
+            x = step[0]  # x coordinate
+            z = step[1]  # z coordinate
+            self.path_ax.scatter([x], [z], s=30, zorder=2, c="blue", alpha=0.7)
+
+        # Optional: Draw path as connected lines
+        if len(path) > 1:
+            path_x = [step[0] for step in path]
+            path_z = [step[1] for step in path]
+            self.path_ax.plot(path_x, path_z, 'b-', alpha=0.5, linewidth=2, zorder=1)
+
+        self.path_ax.legend()
+        plt.axis('off')
+
+        # Update the existing window
+        self.path_fig.canvas.draw()
+        self.path_fig.canvas.flush_events()
+        plt.show(block=False)
+
+        # Option 2: Save to file instead
+        # plt.savefig(self.habitat_mgmt.get_current_top_view_fname(), bbox_inches='tight', dpi=150)
+
+        # Option 3: Keep window open but don't block
+        # plt.draw()
+
+        return self.path_fig, self.path_ax  # Return for potential further manipulation
+
+    ##
+    # Plot a path on the top-down view of the habitat
+    ##
+    def visualise_path(self, path, reachable_positions, start, goal):
+        grid_size = self.controller.initialization_parameters["gridSize"]
+
+        x_max = max([pos[0] for pos in reachable_positions])
+        z_max = max([pos[1] for pos in reachable_positions])
+        x_min = min([pos[0] for pos in reachable_positions])
+        z_min = min([pos[1] for pos in reachable_positions])
+
+        fig, ax = plt.subplots()
+
+        # another way how to plot the path
+        #x = [p[0]["x"] for p in path]
+        #z = [p[0]["z"] for p in path]
+        #ax.scatter(x, z, s=300, c='gray', zorder=1)
+
+        #print("ae: start, goal: ", start, goal)
+
+        # setting up for the top-down picture of the habitat
+        print("AE: map size: ", x_min-grid_size, x_max+grid_size, z_min-grid_size, z_max+grid_size)
+        img = self.get_top_down_frame()
+        ex_mul = 7
+        ax.imshow(img, extent=[x_min-ex_mul*grid_size, x_max+ex_mul*grid_size, z_min-ex_mul*grid_size, z_max+ex_mul*grid_size])
+
+        # set up for the path print
+        lim_mul = 4
+        ax.set_xlim(x_min-lim_mul*grid_size, x_max+lim_mul*grid_size)
+        ax.set_ylim(z_min-lim_mul*grid_size, z_max+lim_mul*grid_size)
+
+        # start pos
+        xs = start[0][0]
+        zs = start[0][2]
+        ax.scatter([xs], [zs], s=100, c='red', zorder=4)
+
+        # goal
+        xg = goal[0][0]
+        zg = goal[0][2]
+        ax.scatter([xg], [zg], s=100, c='green', zorder=4)
+
+        # path
+        for step in path:
+            x = step[0]
+            z = step[1]
+            ax.scatter([x], [z], s=30, zorder=2, c="blue")
+        plt.axis('off')
+
+#        if self.is_running_in_jupyter():
+#            plt.show()
+#        else:
+#            plt.savefig(self.habitat_mgmt.get_current_top_view_fname())
+
+        #plt.show(block=False)
+        plt.pause(0.1)
+        plt.draw()
+
+    ##
+    # For display purposes - the top down view of the habitat
+    ##
+    def get_top_down_frame(self):
+        # Setup the top-down camera
+        event = self.controller.step(action="GetMapViewCameraProperties", raise_for_failure=True)
+        pose = copy.deepcopy(event.metadata["actionReturn"])
+
+        bounds = event.metadata["sceneBounds"]["size"]
+        max_bound = max(bounds["x"], bounds["z"])
+
+        pose["fieldOfView"] = 50
+        pose["position"]["y"] += 1.1 * max_bound
+        pose["orthographic"] = False
+        pose["farClippingPlane"] = 50
+        del pose["orthographicSize"]
+
+        if not hasattr(self, 'has_top_down_camera'):
+            self.has_top_down_camera = False
+            self.top_down_camera_id = 0
+
+        if not self.has_top_down_camera:
+            #print("AE: Adding camera")
+            # add the camera to the scene
+            event = self.controller.step(
+                action="AddThirdPartyCamera",
+                **pose,
+                skyboxColor="white",
+                raise_for_failure=True,
+            )
+            self.top_down_camera_id = len(event.third_party_camera_frames) - 1
+            self.has_top_down_camera = True
+        else:
+            #print("AE: updating camera")
+            # If we already have a top-down view camera, then we need to update it to suit the current habitat
+            event = self.controller.step(
+                action="UpdateThirdPartyCamera",
+                thirdPartyCameraId=self.top_down_camera_id,
+                **pose,
+                #position=position,
+                #rotation=rotation
+            )
+
+        top_down_frame = event.third_party_camera_frames[self.top_down_camera_id]
+
+        return Image.fromarray(top_down_frame)
 
 ##
 # Calculates the angle that we need to turn in order to face p2 if we are

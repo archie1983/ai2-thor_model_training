@@ -48,6 +48,9 @@ class AStarNode:
     def get_xy(self):
         return (self.x, self.y)
 
+    def get_yaw(self):
+        return self.yaw
+
     def get_xyr(self):
         return (self.x, self.y, self.yaw)
 
@@ -70,22 +73,26 @@ class NavigationAction(Enum):
     update our coordinates by 0.25 one way or another.
 
     Cost of such movements: Obviously if we are facing North and then move North, then we incurred 1 action, so a cost of 1.
-    But we might be facing South West and wanting to go in the North East direction. In such case the cost incurred will be 5,
-    because we will have to turn from SW->W, then W->NW, then NW->N and finally N->NE and then we will need to move. That's
-    5 actions in total.
+    But we might be facing South West and wanting to go in the North East direction. In such case the action that we will
+    want to apply will be a rotation action (with cost still 1), but we will do it several times because we will have to
+    turn from SW->W, then W->NW, then NW->N and finally N->NE and then we will need to move. That's 5 actions in total,
+    but that's handled outside of here. The moral of the story is that each action costs 1.
     '''
-    NORTH = (0, -0.25, 0)
-    SOUTH = (0, 0.25, 180)
-    EAST = (0.25, 0, 90)
-    WEST = (-0.25, 0, 270)
-    NORTHEAST = (0.25, -0.25, 45)
-    NORTHWEST = (-0.25, -0.25, 315)
-    SOUTHEAST = (0.25, 0.25, 135)
-    SOUTHWEST = (-0.25, 0.25, 225)
+    MOVE_NORTH = (0, -0.25, 0)
+    MOVE_SOUTH = (0, 0.25, 180)
+    MOVE_EAST = (0.25, 0, 90)
+    MOVE_WEST = (-0.25, 0, 270)
+    MOVE_NORTHEAST = (0.25, -0.25, 45)
+    MOVE_NORTHWEST = (-0.25, -0.25, 315)
+    MOVE_SOUTHEAST = (0.25, 0.25, 135)
+    MOVE_SOUTHWEST = (-0.25, 0.25, 225)
+    TURN_LEFT = (0, 0, -45)
+    TURN_RIGHT = (0, 0, 45)
 
     def __init__(self, dx, dy, yaw):
         self._dx = dx
         self._dy = dy
+        # The yaw is either delta_yaw (change of yaw) if it's a turning action or an absolute yaw if it is a moving action.
         self._yaw = yaw
 
     @property
@@ -97,8 +104,15 @@ class NavigationAction(Enum):
         return self._dy
 
     @property
-    def new_yaw(self):
+    def yaw(self):
         return self._yaw
+
+    @classmethod
+    def valid_actions(cls, current_pose_yaw):
+        ret_set = {action for action in cls if action.yaw == current_pose_yaw}
+        ret_set.add(NavigationAction.TURN_RIGHT)
+        ret_set.add(NavigationAction.TURN_LEFT)
+        return ret_set
 
     # Apply the action to some X and Y coordinates.
     # This will allow us to test if the new X and Y is within reachable positions
@@ -113,24 +127,20 @@ class NavigationAction(Enum):
         # print("AE: full_pose[0][0]: ", full_pose[0][0], node.get_ai2thor_pose())
         new_x = full_pose[0][0] + self._dx
         new_y = full_pose[0][2] + self._dy
-        # print("AE: full_pose[0][0]: ", full_pose[0][0], node.get_ai2thor_pose())
-
-        # Cost will always be 1 for the movement ahead and some value to account for the required turns
-        # And we want to calculate it before we update the yaw for the full pose which will form the new
-        # node.
-        turning_deg_required = abs(full_pose[1][1] - self._yaw)
-        # If more than 180, then turn the other way
-        if turning_deg_required > 180:
-            turning_deg_required -= 180
-        # We turn in 45 degree increments, so this many turns we will need
-        turns_required = turning_deg_required // 45
-
-        # Cost will always be 1 for the movement ahead and some value to account for the required turns
-        new_cost = 1 + turns_required
+        print("AE: full_pose: ", full_pose)
         # now that new cost has been calculated, we can assign the new yaw to the pose fields.
-        new_yaw = self._yaw
+        # If we're turning, then yaw will change by the specified value,
+        # if not, then it should be the same as before and also equal to the yaw of the specified value.
+        if self in [NavigationAction.TURN_LEFT, NavigationAction.TURN_RIGHT]:
+            new_yaw = full_pose[1][1] + self._yaw
+        else:
+            new_yaw = self._yaw
+            print("AE: new_yaw == full_pose[1][1]: ", new_yaw, full_pose[1][1], self.name)
+            assert(new_yaw == full_pose[1][1])
         new_full_pose = ((new_x, full_pose[0][1], new_y), (0.0, new_yaw, 0.0))
-        new_node = AStarNode(new_full_pose, node.g + new_cost,
+        # Cost of this move will always be 1 - either for the movement ahead or the required turn.
+        # Therefore the g value for the new node will be old g value + 1
+        new_node = AStarNode(new_full_pose, node.g + 1,
                                         euclidean_dist(new_full_pose[0], destination[0]), node)
 
         return new_node
@@ -203,29 +213,8 @@ class NavigationUtils:
                 best_cost = cost[current_node.get_ai2thor_pose_and_rtn()]
                 # here we will store our path
                 self.last_path_gen = []
-                # last pose in path - we need this to detect turns. When we start, it will be None, but for all other
-                # nodes it will be the predecessor - the one we were at before we followed the "parent" link.
-                last_pose_in_path = None
                 # Now work it back
                 while current_node.parent:
-                    if last_pose_in_path:
-                        (_, _, dest) = last_pose_in_path # This is closer to the destination
-                        (_, _, start) = current_node.get_xyr() # This is further from the destination
-                        # Normally we would use here: turning_deg_required = (dest - start + 180) % 360 - 180
-                        # But because we are working our way backwards, this needs to be a reversed list of turning
-                        # steps. Therefore, swap dest and start.
-                        turning_deg_required = (start - dest + 180) % 360 - 180
-                        turn_direction = -1 if turning_deg_required < 0 else 1
-                        print("turning_deg_required: ", turning_deg_required)
-                        # We turn in 45 degree increments, so this many turns we will need
-                        turns_required = abs(turning_deg_required) // 45
-                        old_yaw = dest
-                        print("turns_required: ", turns_required, " dest: ", dest, " start: ", start)
-                        for i in range(turns_required):
-                            new_yaw = old_yaw + turn_direction * 45
-                            self.last_path_gen.append((*current_node.get_xy(), new_yaw))
-                            old_yaw = new_yaw
-
                     self.last_path_gen.append(current_node.get_xyr())
                     last_pose_in_path = current_node.get_xyr()
                     current_node = current_node.parent
@@ -235,7 +224,7 @@ class NavigationUtils:
                 return best_cost
 
             # AE: Look at all defined actions and try each of them from the current pose and see what happens
-            for action in NavigationAction:
+            for action in NavigationAction.valid_actions(current_node.get_yaw()):
                 nx, ny = action.apply(current_node.x, current_node.y)
                 # If we end up in a legal place, then generate a new node and add it to the priority queue
                 if (nx, ny) in reachable_positions:

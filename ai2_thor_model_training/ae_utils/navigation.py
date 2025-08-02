@@ -77,15 +77,24 @@ class NavigationAction(Enum):
     want to apply will be a rotation action (with cost still 1), but we will do it several times because we will have to
     turn from SW->W, then W->NW, then NW->N and finally N->NE and then we will need to move. That's 5 actions in total,
     but that's handled outside of here. The moral of the story is that each action costs 1.
+
+    This is how it would work under normal circumstances (where point (0, 0) is the top left corner), but AI2-Thor has
+    a peculiarity: point (0, 0) is the left lower corner. Therefore we need to change the coordinate changes for each
+    direction. SOUTH becomes (0, -0.25), NORTH becomes (0, 0.25), SW becomes (-0.25, -0.25), NW becomes (-0.25, 0.25),
+    SE becomes (0.25, -0.25) and NE becomes (0.25, 0.25).
+
+    Finally, when we move diagonally, we don't really advance by 0.25 in two directions at once, e.g. when we move NW,
+    we do not advance towards N by 0.25 and towards W by 0.25. We only move in a straight line by 0.25. So if we got N,
+    W, S or E, then we move 0.25 in that direction, but if we move diagonally, then we only move 0.176776885986328.
     '''
-    MOVE_NORTH = (0, -0.25, 0)
-    MOVE_SOUTH = (0, 0.25, 180)
+    MOVE_NORTH = (0, 0.25, 0) #(0, -0.25, 0)
+    MOVE_SOUTH = (0, -0.25, 180) #(0, 0.25, 180)
     MOVE_EAST = (0.25, 0, 90)
     MOVE_WEST = (-0.25, 0, 270)
-    MOVE_NORTHEAST = (0.25, -0.25, 45)
-    MOVE_NORTHWEST = (-0.25, -0.25, 315)
-    MOVE_SOUTHEAST = (0.25, 0.25, 135)
-    MOVE_SOUTHWEST = (-0.25, 0.25, 225)
+    MOVE_NORTHEAST = (0.176776885986328, 0.176776885986328, 45) #(0.25, -0.25, 45)
+    MOVE_NORTHWEST = (-0.176776885986328, 0.176776885986328, 315) #(-0.25, -0.25, 315)
+    MOVE_SOUTHEAST = (0.176776885986328, -0.176776885986328, 135) #(0.25, 0.25, 135)
+    MOVE_SOUTHWEST = (-0.176776885986328, -0.176776885986328, 225) #(-0.25, 0.25, 225)
     TURN_LEFT = (0, 0, -45)
     TURN_RIGHT = (0, 0, 45)
 
@@ -127,7 +136,7 @@ class NavigationAction(Enum):
         # print("AE: full_pose[0][0]: ", full_pose[0][0], node.get_ai2thor_pose())
         new_x = full_pose[0][0] + self._dx
         new_y = full_pose[0][2] + self._dy
-        print("AE: full_pose: ", full_pose)
+        #print("AE: full_pose: ", full_pose)
         # now that new cost has been calculated, we can assign the new yaw to the pose fields.
         # If we're turning, then yaw will change by the specified value,
         # if not, then it should be the same as before and also equal to the yaw of the specified value.
@@ -135,7 +144,7 @@ class NavigationAction(Enum):
             new_yaw = full_pose[1][1] + self._yaw
         else:
             new_yaw = self._yaw
-            print("AE: new_yaw == full_pose[1][1]: ", new_yaw, full_pose[1][1], self.name)
+            #print("AE: new_yaw == full_pose[1][1]: ", new_yaw, full_pose[1][1], self.name)
             assert(new_yaw == full_pose[1][1])
         new_full_pose = ((new_x, full_pose[0][1], new_y), (0.0, new_yaw, 0.0))
         # Cost of this move will always be 1 - either for the movement ahead or the required turn.

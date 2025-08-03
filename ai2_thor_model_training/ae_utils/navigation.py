@@ -85,24 +85,27 @@ class NavigationAction(Enum):
 
     Finally, when we move diagonally, we don't really advance by 0.25 in two directions at once, e.g. when we move NW,
     we do not advance towards N by 0.25 and towards W by 0.25. We only move in a straight line by 0.25. So if we got N,
-    W, S or E, then we move 0.25 in that direction, but if we move diagonally, then we only move 0.176776885986328.
+    W, S or E, then we move 0.25 in that direction, but if we move diagonally, then we only move 0.176776885986328. However,
+    if we do that, then we will end up somewhere that is between grid nodes and it will be hard to validate whether it is
+    a reachable position or not. Therefore we still need to advance by 0.25 in both directions, but reflect the cost appropriately.
     '''
-    MOVE_NORTH = (0, 0.25, 0) #(0, -0.25, 0)
-    MOVE_SOUTH = (0, -0.25, 180) #(0, 0.25, 180)
-    MOVE_EAST = (0.25, 0, 90)
-    MOVE_WEST = (-0.25, 0, 270)
-    MOVE_NORTHEAST = (0.176776885986328, 0.176776885986328, 45) #(0.25, -0.25, 45)
-    MOVE_NORTHWEST = (-0.176776885986328, 0.176776885986328, 315) #(-0.25, -0.25, 315)
-    MOVE_SOUTHEAST = (0.176776885986328, -0.176776885986328, 135) #(0.25, 0.25, 135)
-    MOVE_SOUTHWEST = (-0.176776885986328, -0.176776885986328, 225) #(-0.25, 0.25, 225)
-    TURN_LEFT = (0, 0, -45)
-    TURN_RIGHT = (0, 0, 45)
+    MOVE_NORTH = (0, 0.25, 0, 1) #(0, -0.25, 0)
+    MOVE_SOUTH = (0, -0.25, 180, 1) #(0, 0.25, 180)
+    MOVE_EAST = (0.25, 0, 90, 1)
+    MOVE_WEST = (-0.25, 0, 270, 1)
+    MOVE_NORTHEAST = (0.25, 0.25, 45, 1.414213562) #(0.25, -0.25, 45)
+    MOVE_NORTHWEST = (-0.25, 0.25, 315, 1.414213562) #(-0.25, -0.25, 315)
+    MOVE_SOUTHEAST = (0.25, -0.25, 135, 1.414213562) #(0.25, 0.25, 135)
+    MOVE_SOUTHWEST = (-0.25, -0.25, 225, 1.414213562) #(-0.25, 0.25, 225)
+    TURN_LEFT = (0, 0, -45, 1)
+    TURN_RIGHT = (0, 0, 45, 1)
 
-    def __init__(self, dx, dy, yaw):
+    def __init__(self, dx, dy, yaw, cost_of_move):
         self._dx = dx
         self._dy = dy
         # The yaw is either delta_yaw (change of yaw) if it's a turning action or an absolute yaw if it is a moving action.
         self._yaw = yaw
+        self._cost_of_move = cost_of_move
 
     @property
     def dx(self):
@@ -141,15 +144,16 @@ class NavigationAction(Enum):
         # If we're turning, then yaw will change by the specified value,
         # if not, then it should be the same as before and also equal to the yaw of the specified value.
         if self in [NavigationAction.TURN_LEFT, NavigationAction.TURN_RIGHT]:
-            new_yaw = full_pose[1][1] + self._yaw
+            new_yaw = NavigationUtils.normalize_yaw(full_pose[1][1] + self._yaw)
         else:
             new_yaw = self._yaw
             #print("AE: new_yaw == full_pose[1][1]: ", new_yaw, full_pose[1][1], self.name)
             assert(new_yaw == full_pose[1][1])
         new_full_pose = ((new_x, full_pose[0][1], new_y), (0.0, new_yaw, 0.0))
-        # Cost of this move will always be 1 - either for the movement ahead or the required turn.
-        # Therefore the g value for the new node will be old g value + 1
-        new_node = AStarNode(new_full_pose, node.g + 1,
+        # Cost of this move will always be as defined in the constructor, 1 - for the movement where only one coordinate
+        # changes or when turning. Or 1.414 for a diagonal move.
+        # Therefore the g value for the new node will be old g value + self._cost_of_move
+        new_node = AStarNode(new_full_pose, node.g + self._cost_of_move,
                                         euclidean_dist(new_full_pose[0], destination[0]), node)
 
         return new_node
@@ -233,13 +237,15 @@ class NavigationUtils:
                 return best_cost
 
             # AE: Look at all defined actions and try each of them from the current pose and see what happens
-            for action in NavigationAction.valid_actions(current_node.get_yaw()):
+            #print("ae: current_node.get_yaw() : ", current_node.get_yaw(), " self.normalize_yaw(current_node.get_yaw()): ", self.normalize_yaw(current_node.get_yaw()))
+            for action in NavigationAction.valid_actions(self.normalize_yaw(current_node.get_yaw())):
                 nx, ny = action.apply(current_node.x, current_node.y)
                 # If we end up in a legal place, then generate a new node and add it to the priority queue
                 if (nx, ny) in reachable_positions:
                     # generate a new node from this action. There may be different nodes for the same location
                     # on the grid because they may have different yaw rotations and even different parents.
                     # So in the worst case there can be a node for <each grid location> * <all possible yaw rotations> * <each grid location as a parent>
+                    #print("AE: current_node: ", current_node.get_yaw(), " destination: ", destination)
                     next_node = action.apply_to_node(current_node, destination)
                     # The new nodes cost (the g value) has already been computed when it was generated, we can add it to the
                     # cost dictionary for this position and rotation if it's not already there.
@@ -277,7 +283,8 @@ class NavigationUtils:
     def round_to_step(self, val, step=0.25):
         return round(val / step) * step
 
-    def normalize_yaw(self, yaw):
+    @staticmethod
+    def normalize_yaw(yaw):
         """
         Normalize yaw angle to the nearest multiple of 45 in [0, 315].
         Input yaw can be any real number (positive or negative).

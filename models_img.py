@@ -95,17 +95,31 @@ class LabelEmbedder(nn.Module):
 
 
 # ------------change-------------------
-class MLPLabelEmbedder(nn.Module):
-    def __init__(self, num_classes=4, hidden_size=768, dropout_prob=0.1):
-        """
-        A MLP Embedder for continuous label like (x, y, z, orientation)
-        """
+class ImageLabelEmbedder(nn.Module):
+    def __init__(self, hidden_size=768, dropout_prob=0.1, image_size=(256, 256), in_channels=3):
         super().__init__()
         self.use_cfg_embedding = dropout_prob > 0
 
-        # MLP for processing 4-dimensional continuous labels
+        # CNN for image feature extraction
+        self.cnn = nn.Sequential(
+            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1),  # 128x128
+            nn.SiLU(),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),  # 64x64
+            nn.SiLU(),
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),  # 32x32
+            nn.SiLU(),
+            nn.AdaptiveAvgPool2d(1),  # Global average pooling
+            nn.Flatten()
+        )
+
+        # Calculate CNN output size, in case of error from different size of image
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, in_channels, *image_size)
+            cnn_output_size = self.cnn(dummy_input).shape[1]
+
+        # MLP for combining image features and left/right
         self.mlp = nn.Sequential(
-            nn.Linear(4, hidden_size * 4),
+            nn.Linear(cnn_output_size + 1, hidden_size * 4),  # +1 for binary turn info
             nn.SiLU(),
             nn.Linear(hidden_size * 4, hidden_size * 2),
             nn.SiLU(),
@@ -115,38 +129,42 @@ class MLPLabelEmbedder(nn.Module):
         if self.use_cfg_embedding:
             self.null_embedding = nn.Parameter(torch.zeros(hidden_size))
 
-        self.num_classes = num_classes
         self.dropout_prob = dropout_prob
         self.hidden_size = hidden_size
 
     def token_drop(self, labels, force_drop_ids=None):
         """
         Drops labels to enable classifier-free guidance.
-        Not label return, just directly return drop_ids
+        Returns drop_ids mask.
         """
         if force_drop_ids is None:
-            drop_ids = torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
+            drop_ids = torch.rand(labels[0].shape[0], device=labels[0].device) < self.dropout_prob
         else:
             drop_ids = force_drop_ids == 1
         return drop_ids
 
     def forward(self, labels, train, force_drop_ids=None):
-        # check
-        assert labels.dtype == torch.float, "Labels must be float tensors"
-        assert labels.shape[1] == 4, "Labels must have shape [batch_size, 4]"
+        current_image, turn_info = labels
 
-        # MLP to embedding
-        embeddings = self.mlp(labels)
+        # Extract image features
+        image_features = self.cnn(current_image)
 
-        # deal with classifier-free guidance
+        # Add turn info (convert to float and add dimension)
+        turn_info = turn_info.float().unsqueeze(1)
+        combined_features = torch.cat([image_features, turn_info], dim=1)
+
+        # Process through MLP
+        embeddings = self.mlp(combined_features)
+
+        # Handle classifier-free guidance
         use_dropout = self.dropout_prob > 0
         if (train and use_dropout) or (force_drop_ids is not None):
             drop_ids = self.token_drop(labels, force_drop_ids)
 
-            # for null
-            null_embeddings = self.null_embedding.unsqueeze(0).expand(labels.size(0), -1)
+            # For null embeddings
+            null_embeddings = self.null_embedding.unsqueeze(0).expand(current_image.size(0), -1)
 
-            # replace the null value
+            # Replace with null embeddings where dropped
             embeddings = torch.where(drop_ids.unsqueeze(1), null_embeddings, embeddings)
 
         return embeddings
@@ -227,8 +245,11 @@ class DiT(nn.Module):
 
         self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
         self.t_embedder = TimestepEmbedder(hidden_size)
-        #self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
-        self.y_embedder = MLPLabelEmbedder(num_classes=5, hidden_size=hidden_size, dropout_prob=class_dropout_prob)
+        self.y_embedder = ImageLabelEmbedder(
+            hidden_size=hidden_size,
+            dropout_prob=class_dropout_prob,
+            image_size=(256, 256), # If your size of image is not 256x256, change it
+        )
         num_patches = self.x_embedder.num_patches
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
@@ -313,10 +334,7 @@ class DiT(nn.Module):
         """
         # https://github.com/openai/glide-text2im/blob/main/notebooks/text2im.ipynb
         # -----------change------------
-        if y.dim() == 1:
-            y = y.unsqueeze(1)
-        if y.shape[1] != 4:
-            raise ValueError(f"The shape of label should be (N, 4), but there is {y.shape}")
+        # Check y shape?
         # -----------change END--------
 
         half = x[: len(x) // 2]

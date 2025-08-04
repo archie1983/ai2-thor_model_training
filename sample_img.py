@@ -11,12 +11,24 @@ import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 from torchvision.utils import save_image
+from torchvision import transforms
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
 from download import find_model
-from models import DiT_models
+from models_img import DiT_models
+from PIL import Image
 import argparse
 import math
+
+
+def load_image_as_tensor(image_path, image_size=256, device='cpu'):
+    transform = transforms.Compose([
+        transforms.Resize((image_size, image_size)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5] * 3, [0.5] * 3),
+    ])
+    img = Image.open(image_path).convert('RGB')
+    return transform(img).unsqueeze(0).to(device)  # (1, 3, H, W)
 
 
 def main(args):
@@ -40,8 +52,6 @@ def main(args):
     ckpt_path = args.ckpt or f"DiT-XL-2-{args.image_size}x{args.image_size}.pt"
     checkpoint = find_model(ckpt_path)
     state_dict = checkpoint["ema"]
-    xyz_min = checkpoint["xyz_min"].to(device)
-    xyz_max = checkpoint["xyz_max"].to(device)
     model.load_state_dict(state_dict)
     model.eval()  # important!
     diffusion = create_diffusion(str(args.num_sampling_steps))
@@ -60,38 +70,42 @@ def main(args):
     #n = len(class_labels)
     #z = torch.randn(n, 4, latent_size, latent_size, device=device)
     # change---------------------------
-    xyz_labels = [
-        [9.0, 0.9009993672370911, 4.0, 135.0],
-        [9.0, 0.9009993672370911, 4.0, 180.0],
-        [9.0, 0.9009993672370911, 4.0, 225.0]
+    conditions = [
+        {"current_image": "sample_cur_1.png", "turn_info": 0},  # 左转
+        {"current_image": "sample_cur_2.png", "turn_info": 1},  # 右转
     ]
 
-    encoded = []
-    for x, y_, z, rot_deg in xyz_labels:
-        # ① Normalization of xyz
-        xyz_norm = torch.tensor([x, y_, z], device=device)
-        xyz_norm = (xyz_norm - xyz_min) / (xyz_max - xyz_min + 1e-8)
-        # ② Agnle to sin
-        r = math.radians(rot_deg)
-        encoded.append(torch.cat([xyz_norm, torch.tensor([math.sin(r)], device=device)]))
+    # 加载当前图像和转向信息
+    current_images = []
+    turn_infos = []
+    for cond in conditions:
+        img_tensor = load_image_as_tensor(cond["current_image"], args.image_size, device)
+        current_images.append(img_tensor)
+        turn_infos.append(cond["turn_info"])
 
-    y = torch.stack(encoded, dim=0)  # shape [n,4]
-    n = y.shape[0]
+    # 堆叠成batch
+    current_images = torch.cat(current_images, dim=0)  # (n, 3, H, W)
+    turn_infos = torch.tensor(turn_infos, dtype=torch.long, device=device)  # (n,)
 
-    #y = torch.tensor(xyz_labels, dtype=torch.float32, device=device)
-    #n = len(xyz_labels)
+    # 2. 准备噪声输入 --------------------------------------------
+    n = len(conditions)
     z = torch.randn(n, 4, latent_size, latent_size, device=device)
-    # change END-----------------------
-    #y = torch.tensor(class_labels, device=device)
 
-    # Setup classifier-free guidance:
-    z = torch.cat([z, z], 0)
-    # change -------------------------
-    #y_null = torch.tensor([1000] * n, device=device)
-    y_null = torch.zeros_like(y)
+    # 3. 分类器无关引导设置 --------------------------------------
+    z = torch.cat([z, z], 0)  # 重复噪声
+
+    # 创建"空"条件 (用于CFG)
+    null_images = torch.zeros_like(current_images)  # 全零图像
+    null_turn = torch.zeros_like(turn_infos)  # 默认转向
+
+    y_images = torch.cat([current_images, null_images], 0)  # (2n, 3, H, W)
+    y_turn = torch.cat([turn_infos, null_turn], 0)  # (2n,)
+
+    model_kwargs = {
+        "y": (y_images, y_turn),  # 改为元组形式
+        "cfg_scale": args.cfg_scale
+    }
     # change END-----------------------
-    y = torch.cat([y, y_null], 0)
-    model_kwargs = dict(y=y, cfg_scale=args.cfg_scale)
 
     # Sample images:
     samples = diffusion.p_sample_loop(
@@ -101,7 +115,7 @@ def main(args):
     samples = vae.decode(samples / 0.18215).sample
 
     # Save and display images:
-    save_image(samples, "sample.png", nrow=4, normalize=True, value_range=(-1, 1))
+    save_image(samples, "sample_next.png", nrow=4, normalize=True, value_range=(-1, 1))
 
 
 if __name__ == "__main__":

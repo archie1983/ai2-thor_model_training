@@ -23,8 +23,12 @@ from PIL import Image
 import numpy as np
 import math
 import argparse
+import random
 
 
+# Not be used, if you consider this that using .npz
+# The tool https://github.com/openai/guided-diffusion/tree/main/evaluations
+# Might be useful
 def create_npz_from_sample_folder(sample_dir, num=50_000):
     """
     Builds a single .npz file from a folder of .png samples.
@@ -40,6 +44,29 @@ def create_npz_from_sample_folder(sample_dir, num=50_000):
     np.savez(npz_path, arr_0=samples)
     print(f"Saved .npz file to {npz_path} [shape={samples.shape}].")
     return npz_path
+
+
+def generate_random_position(
+    xyz_min,
+    xyz_max,
+    angle_range: tuple = (0, 360),
+    device: str = "cuda"
+):
+    xyz_min = xyz_min.cpu()
+    xyz_max = xyz_max.cpu()
+
+    x = random.uniform(xyz_min[0].item(), xyz_max[0].item())
+    y = random.uniform(xyz_min[1].item(), xyz_max[1].item())
+    z = random.uniform(xyz_min[2].item(), xyz_max[2].item())
+    rot_deg = random.uniform(angle_range[0], angle_range[1])
+
+    xyz_norm = torch.tensor([x, y, z], device=device)
+    xyz_norm = (xyz_norm - xyz_min.to(device)) / (xyz_max.to(device) - xyz_min.to(device) + 1e-8)
+
+    rot_sin = torch.tensor([math.sin(math.radians(rot_deg))], device=device)
+    pos = torch.cat([xyz_norm, rot_sin])
+
+    return pos.unsqueeze(0)
 
 
 def main(args):
@@ -72,7 +99,10 @@ def main(args):
     ).to(device)
     # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
     ckpt_path = args.ckpt or f"DiT-XL-2-{args.image_size}x{args.image_size}.pt"
-    state_dict = find_model(ckpt_path)
+    checkpoint = find_model(ckpt_path)
+    state_dict = checkpoint["ema"]
+    xyz_min = checkpoint["xyz_min"].to(device)
+    xyz_max = checkpoint["xyz_max"].to(device)
     model.load_state_dict(state_dict)
     model.eval()  # important!
     diffusion = create_diffusion(str(args.num_sampling_steps))
@@ -112,12 +142,14 @@ def main(args):
     for _ in pbar:
         # Sample inputs:
         z = torch.randn(n, model.in_channels, latent_size, latent_size, device=device)
-        y = torch.randint(0, args.num_classes, (n,), device=device)
+        y = generate_random_position(xyz_min, xyz_max, (0, 360), device)
+        # continue
 
         # Setup classifier-free guidance:
         if using_cfg:
             z = torch.cat([z, z], 0)
-            y_null = torch.tensor([1000] * n, device=device)
+            #y_null = torch.tensor([1000] * n, device=device)
+            y_null = torch.zeros_like(y)
             y = torch.cat([y, y_null], 0)
             model_kwargs = dict(y=y, cfg_scale=args.cfg_scale)
             sample_fn = model.forward_with_cfg
@@ -144,7 +176,7 @@ def main(args):
     # Make sure all processes have finished saving their samples before attempting to convert to .npz
     dist.barrier()
     if rank == 0:
-        create_npz_from_sample_folder(sample_folder_dir, args.num_fid_samples)
+        #create_npz_from_sample_folder(sample_folder_dir, args.num_fid_samples)
         print("Done.")
     dist.barrier()
     dist.destroy_process_group()

@@ -29,7 +29,7 @@ import logging
 import os
 import tarfile, io, json, math
 
-from models import DiT_models
+from models_img import DiT_models
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
 
@@ -37,30 +37,31 @@ from diffusers.models import AutoencoderKL
 #################################################################################
 #                             Training Helper Functions                         #
 #################################################################################
-class GlobalStats:
-    xyz_min = None
-    xyz_max = None
 
-def scan_min_max(shards):
-    """
-    Scanning WebDataset tar shards，return the min/max（Tensor shape=[3]） of xyz
-    Only run in rank==0, the other process will get results by dist.broadcast
-    """
-    mins = torch.full((3,), float("inf"), device="cpu")
-    maxs = torch.full((3,), float("-inf"), device="cpu")
 
-    for shard in shards:
-        with tarfile.open(shard, "r") as tar:
-            for member in tar:
-                if member.isfile() and member.name.endswith(".json"):
-                    f = tar.extractfile(member)
-                    if f is None: continue
-                    obj = json.load(io.TextIOWrapper(f, encoding="utf-8"))
-                    v = torch.tensor([obj["pos_x"], obj["pos_y"], obj["pos_z"]], device="cpu")
-                    mins = torch.minimum(mins, v)
-                    maxs = torch.maximum(maxs, v)
+# Manually decode, because the name it too complex to use .decode("pil")
+def process_sample(sample):
+    transform = transforms.Compose([
+        transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
+    ])
 
-    return mins, maxs
+    def transform_label(label_json):
+        # left = 0 and right = 1
+        turn_info = label_json["direction"]
+        return torch.tensor(turn_info, dtype=torch.long)
+
+    cur_img = Image.open(io.BytesIO(sample["png.cur"])).convert("RGB")
+    next_img = Image.open(io.BytesIO(sample["png.next"])).convert("RGB")
+    label = json.loads(sample["json"].decode("utf-8"))
+
+    return (
+        transform(next_img),
+        transform(cur_img),
+        transform_label(label)
+    )
 
 
 @torch.no_grad()
@@ -188,33 +189,6 @@ def main(args):
     else:
         logger = create_logger(None)
 
-    # Scanning min/max
-    if rank == 0:
-        print("Scanning dataset for xyz min/max ...")
-        shards = sorted(glob(f"{args.data_path}/train-*.tar"))
-        xyz_min_cpu, xyz_max_cpu = scan_min_max(shards)
-        print("Finished scan. xyz_min:", xyz_min_cpu.tolist(), " xyz_max:", xyz_max_cpu.tolist())
-
-        xyz_min = xyz_min_cpu.to(device)
-        xyz_max = xyz_max_cpu.to(device)
-
-        GlobalStats.xyz_min = xyz_min_cpu
-        GlobalStats.xyz_max = xyz_max_cpu
-    else:
-        xyz_min = torch.empty(3, device=device)
-        xyz_max = torch.empty(3, device=device)
-
-    # broadcast to GPUs
-    dist.broadcast(xyz_min, src=0)
-    dist.broadcast(xyz_max, src=0)
-
-    if rank != 0:
-        GlobalStats.xyz_min = xyz_min.cpu()
-        GlobalStats.xyz_max = xyz_max.cpu()
-
-    xyz_min_cpu = xyz_min.cpu()
-    xyz_max_cpu = xyz_max.cpu()
-
     # Create model:
     assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
     latent_size = args.image_size // 8
@@ -251,42 +225,14 @@ def main(args):
     # Set batch size per GPU
     batch_size = int(args.global_batch_size // dist.get_world_size())
 
-    # Function for transform, not transformer
-    transform_img = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),  # PIL->Tensor
-        transforms.Normalize([0.5] * 3, [0.5] * 3),
-    ])
-
-    # def transform_label(label_json):
-    #     values = [label_json["pos_x"], label_json["pos_y"], label_json["pos_z"], label_json["rot"]]
-    #     return torch.tensor(values, dtype=torch.float32)
-
-    def transform_label(label_json):
-        x, y, z = label_json["pos_x"], label_json["pos_y"], label_json["pos_z"]
-        rot_deg = label_json["rot"]
-
-        # Linear normalize xyz
-        if GlobalStats.xyz_min is None or GlobalStats.xyz_max is None:
-            raise RuntimeError("Global stats not initialized")
-        xyz = torch.tensor([x, y, z], dtype=torch.float32, device="cpu")
-        xyz_norm = (xyz - GlobalStats.xyz_min) / (GlobalStats.xyz_max - GlobalStats.xyz_min + 1e-8)
-
-        rot_rad = np.deg2rad(rot_deg)
-        rot_sin = math.sin(rot_rad)
-
-        return torch.tensor([*xyz_norm, rot_sin], dtype=torch.float32, device="cpu")
-
     # Create WebDataset
     #shards = [args.data_path]
-    shards = sorted(glob(f"{args.data_path}/train-*.tar"))
+    shards = sorted(glob(f"{args.data_path}/dataset-*.tar"))
 
     dataset = (
         wds.WebDataset(shards, shardshuffle=False, resampled=False, nodesplitter=wds.split_by_node, workersplitter=wds.split_by_worker)
         .shuffle(1000)
-        .decode("pil")
-        .to_tuple("png", "json")
-        .map_tuple(transform, transform_label)
+        .map(process_sample)
         .batched(batch_size, partial=False)
         # args.epochs should not be here, it should be the num of samples you want trained in one epoch
         #.with_epoch(args.epochs)
@@ -317,7 +263,7 @@ def main(args):
         ema.load_state_dict(checkpoint["ema"])
         opt.load_state_dict(checkpoint["opt"])
         # if you want to continue training base on your checkpoint.pt, change it
-        train_steps = 300000
+        train_steps = 30000
         logger.info(f"Loaded checkpoint from {args.checkpoint_path}, resuming from step {train_steps}")
 
     # Load pretrained model
@@ -341,12 +287,14 @@ def main(args):
     start_time = time()
 
     logger.info(f"Training for {args.epochs} epochs...")
-    for epoch in range(0, args.epochs):
+    for epoch in range(60, args.epochs):
         #sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x, y in loader:
-            x = x.to(device)
-            y = y.to(device)
+        for next_img, cur_img, turn_info in loader:
+            # Next img is x
+            x = next_img.to(device)
+            # Cur img and turn info are y
+            y = (cur_img.to(device), turn_info.to(device))
             with torch.no_grad():
                 # Map input images to latent space + normalize latents:
                 x = vae.encode(x).latent_dist.sample().mul_(0.18215)
@@ -386,8 +334,6 @@ def main(args):
                         "ema": ema.state_dict(),
                         "opt": opt.state_dict(),
                         "args": args,
-                        "xyz_min": xyz_min_cpu,
-                        "xyz_max": xyz_max_cpu,
                     }
                     checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
                     torch.save(checkpoint, checkpoint_path)
@@ -395,17 +341,16 @@ def main(args):
                 dist.barrier()
 
     # After training done, save one last time
-    checkpoint = {
-        "model": model.module.state_dict(),
-        "ema": ema.state_dict(),
-        "opt": opt.state_dict(),
-        "args": args,
-        "xyz_min": xyz_min_cpu,
-        "xyz_max": xyz_max_cpu,
-    }
-    checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
-    torch.save(checkpoint, checkpoint_path)
-    logger.info(f"Saved checkpoint to {checkpoint_path}")
+    if rank == 0:
+        checkpoint = {
+            "model": model.module.state_dict(),
+            "ema": ema.state_dict(),
+            "opt": opt.state_dict(),
+            "args": args,
+        }
+        checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
+        torch.save(checkpoint, checkpoint_path)
+        logger.info(f"Saved checkpoint to {checkpoint_path}")
 
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...

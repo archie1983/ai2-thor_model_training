@@ -2,7 +2,9 @@
 
 This project provides a diffusion model for multiple continuous label like spatial information (x, y, z, orientation).
 This model integrates CCDM's continuous label processing methodology into the DiT framework.
+
 DiT repository at https://github.com/facebookresearch/DiT.
+
 CCDM repository at https://github.com/UBCDingXin/CCDM.
 
 ## Key Modifications
@@ -11,6 +13,7 @@ CCDM repository at https://github.com/UBCDingXin/CCDM.
 
 ## Dataset
 The dataset follows WebDataset format, where each shard contains xxxx.png image files paired with corresponding xxxx.json label files.
+
 In dataset folder, there is a small dataset which have 88 images (11 * 8).
 
 ## Installation

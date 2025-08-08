@@ -35,6 +35,7 @@ class WorldModel(nn.Module):
         shapes = {k: tuple(v.shape) for k, v in obs_space.spaces.items()}
         self.encoder = networks.MultiEncoder(shapes, **config.encoder)
         self.embed_size = self.encoder.outdim
+        # Dynamics predictor 包含recurrent state ht和 latent state（discrete）zt （就是ht生成zt？）
         self.dynamics = networks.RSSM(
             config.dyn_stoch,
             config.dyn_deter,
@@ -57,9 +58,11 @@ class WorldModel(nn.Module):
             feat_size = config.dyn_stoch * config.dyn_discrete + config.dyn_deter
         else:
             feat_size = config.dyn_stoch + config.dyn_deter
+        # decoder
         self.heads["decoder"] = networks.MultiDecoder(
             feat_size, shapes, **config.decoder
         )
+        # reward predictor 
         self.heads["reward"] = networks.MLP(
             feat_size,
             (255,) if config.reward_head["dist"] == "symlog_disc" else (),
@@ -72,6 +75,7 @@ class WorldModel(nn.Module):
             device=config.device,
             name="Reward",
         )
+        # continue precictor
         self.heads["cont"] = networks.MLP(
             feat_size,
             (),
@@ -114,7 +118,9 @@ class WorldModel(nn.Module):
 
         with tools.RequiresGrad(self):
             with torch.cuda.amp.autocast(self._use_amp):
+                # 编码到latent space
                 embed = self.encoder(data)
+                # rssm学习latent state数据
                 post, prior = self.dynamics.observe(
                     embed, data["action"], data["is_first"]
                 )
@@ -125,6 +131,7 @@ class WorldModel(nn.Module):
                     post, prior, kl_free, dyn_scale, rep_scale
                 )
                 assert kl_loss.shape == embed.shape[:2], kl_loss.shape
+
                 preds = {}
                 for name, head in self.heads.items():
                     grad_head = name in self._config.grad_heads
@@ -154,6 +161,7 @@ class WorldModel(nn.Module):
         metrics["dyn_loss"] = to_np(dyn_loss)
         metrics["rep_loss"] = to_np(rep_loss)
         metrics["kl"] = to_np(torch.mean(kl_value))
+        # metrics里面包含很多loss
         with torch.cuda.amp.autocast(self._use_amp):
             metrics["prior_ent"] = to_np(
                 torch.mean(self.dynamics.get_dist(prior).entropy())
@@ -294,9 +302,11 @@ class ImagBehavior(nn.Module):
 
         with tools.RequiresGrad(self.actor):
             with torch.cuda.amp.autocast(self._use_amp):
+                # 用世界模型想象，生成latent state
                 imag_feat, imag_state, imag_action = self._imagine(
                     start, self.actor, self._config.imag_horizon
                 )
+                # 计算reward
                 reward = objective(imag_feat, imag_state, imag_action)
                 actor_ent = self.actor(imag_feat).entropy()
                 state_ent = self._world_model.dynamics.get_dist(imag_state).entropy()

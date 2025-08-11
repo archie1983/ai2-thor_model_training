@@ -26,7 +26,8 @@ to_np = lambda x: x.detach().cpu().numpy()
 
 
 # python3 dreamer.py --configs ai2thor --task ai2thor_nav --logdir ./logdir/ai2thor_nav_$(date +%Y%m%d_%H%M%S)  --prefill 0 --video_pred_log False --eval_episode_num 0
-# python3 dreamer.py --configs ai2thor --task ai2thor_nav --logdir ./logdir/ai2thor_nav
+# python3 dreamer.py --configs ai2thor --task ai2thor_nav --logdir ./logdir/dense_test_1234 --habitat_id 1234
+# python3 dreamer.py --configs ai2thor --task ai2thor_nav --logdir ./logdir/new_sparse_test_1234 --habitat_id 1234
 
 class Dreamer(nn.Module):
     def __init__(self, obs_space, act_space, config, logger, dataset):
@@ -44,7 +45,7 @@ class Dreamer(nn.Module):
         self._step = logger.step // config.action_repeat # 当前的step
         self._dataset = dataset #generator, episode数据，包含reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
         self._wm = models.WorldModel(obs_space, act_space, self._step, config) # 世界模型
-        self._task_behavior = models.ImagBehavior(config, self._wm) # 任务行为模型  ImagBehavior是行为模型，它根据世界模型预测的特征来生成动作
+        self._task_behavior = models.ImagBehavior(config, self._wm) # 任务行为模型  ImagBehavior是行为模型，它根据世界模型来生成动作
         if (
             config.compile and os.name != "nt"
         ):  # compilation is not supported on windows
@@ -255,19 +256,20 @@ def main(config):
     else:
         directory = config.traindir
     train_eps = tools.load_episodes(directory, limit=config.dataset_size)
-    print(f"Train episodes loaded.")
+    # print(f"Train episodes loaded.")
     # TODO what is episode means? it stored by npz file.
     if config.offline_evaldir:
         directory = config.offline_evaldir.format(**vars(config))
     else:
         directory = config.evaldir
     eval_eps = tools.load_episodes(directory, limit=1)
-    print(f"Eval episodes loaded.")
+    # print(f"Eval episodes loaded.")
     # directory: logdir/ai2thor_nav_20250717_182842/train_eps
 
-
+    #  -----------------------load procthor envs dataset---------------------------
+    print("load procthor envs dataset")
     make = lambda mode, id: make_env(config, mode, id)
-    train_envs = [make("train", i) for i in range(config.envs)]
+    train_envs = [make("train", i) for i in range(config.envs)]  # i为环境数量
     eval_envs = [make("eval", i) for i in range(config.envs)]
     if config.parallel:
         train_envs = [Parallel(env, "process") for env in train_envs]
@@ -276,13 +278,10 @@ def main(config):
         train_envs = [Damy(env) for env in train_envs]
         eval_envs = [Damy(env) for env in eval_envs]
     acts = train_envs[0].action_space
-    # print(f"acts:{acts}")
     config.num_actions = acts.n if hasattr(acts, "n") else acts.shape[0]
     # crafter: 17 actions
     # dmc_vision: 6 actions
-    #---------------------------------create envs---------------------------------
 
-    
     #--------------------------------- Prefill------------------------------------
     state = None
     if not config.offline_traindir:
@@ -368,9 +367,11 @@ def main(config):
 
             # 在每次评估结束后画出两个path，并保存视频
 
-            if config.video_pred_log:
+            if config.video_pred_log:  # 打印出wm隐藏层的视频
                 video_pred = agent._wm.video_pred(next(eval_dataset))
                 logger.video("eval_openl", to_np(video_pred))
+                print("ROXXI: latent space video_pred saved")
+                # [真实图像 | 模型预测图像 | 误差图像]
                 
         print("Start training.")
         state = tools.simulate(

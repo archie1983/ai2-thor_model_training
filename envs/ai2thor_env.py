@@ -32,18 +32,12 @@ from thortils.vision import thor_topdown_img
 from thortils.agent import thor_agent_pose, thor_pose_as_tuple
 from thortils.controller import _resolve
 from thortils.navigation import get_shortest_path_to_object, _round_pose
-# TODO: "get_shortest_path_to_object" is A* path?
 from thortils.utils import PriorityQueue, normalize_angles, euclidean_dist
-
-# TODO: 1. one step is one action?  multiple steps IN ONE ROOM with same start point is one episode?
-# TODO: 2. reset when episode done?
-# TODO: 3. How to know what function I can use?
-# TODO: 4. GPU Memory cose?
 
 class AI2ThorEnv(gym.Env):
     def __init__(self, config):
         super().__init__()
-        # 初始化 AI2-THOR 控制器
+        # initialize AI2-THOR controller
         self.controller = None
         self.config = config
         self.atu = AI2THORUtils()
@@ -52,7 +46,7 @@ class AI2ThorEnv(gym.Env):
         self.mapper = None
         self.action_list = config.action_list  # ["MoveAhead", "RotateLeft", "RotateRight"]
         self.action_space = spaces.Discrete(len(self.action_list))
-        # 定义观测空间为字典格式，与Dreamer3兼容
+        # define observation space as a dictionary format, compatible with Dreamer3
         self.observation_space = spaces.Dict({
             "image": spaces.Box(
                 low=0, high=255, shape=(config.size[1], config.size[0], 3), dtype=np.uint8
@@ -62,16 +56,16 @@ class AI2ThorEnv(gym.Env):
         })
         self.max_steps = getattr(config, "time_limit", 200)
 
-        # 新增的数据
+        # new data
         self.habitat = self.atu.load_proctor_habitat(int(self.config.habitat_id)) 
         # print("ROXXI: habitat: ", self.habitat)
-        self.reachable_positions = None # 该habitat的可达位置列表
-        self.start_point = None # 随机选取的起点（pos， rtn）
-        self.cur_pos = None  #  当前位置（pos， rtn）如 ((2.0, 0.9009993672370911, 2.75), (-0.0, 135.0, 0.0))
-        self.rooms_in_habitat = None # 该habitat的房间列表
-        self.current_target_point = None # 当前目标点（房间中心）
+        self.reachable_positions = None # reachable positions in the habitat
+        self.start_point = None # random start point (pos, rtn)
+        self.cur_pos = None  # current position (pos, rtn) like ((2.0, 0.9009993672370911, 2.75), (-0.0, 135.0, 0.0))
+        self.rooms_in_habitat = None # rooms in the habitat
+        self.current_target_point = None # current target point (room center)
         self.initial_path_length = None 
-        self.current_path_length = 1000 # 当前里终点的距离
+        self.current_path_length = 1000 # distance to the target point
         self.initial_path = None
         self.current_path = None   # for visualization
         self.dreamer_path = None   # for visualization
@@ -91,7 +85,7 @@ class AI2ThorEnv(gym.Env):
             self.controller.reset(self.controller.scene)
             self.rnc.reset_state()
         
-        # 可视化当前地图
+        ## visualize current map
         # topdown_img = thor_topdown_img(self.controller)
         # img = Image.fromarray(topdown_img)
         # img.show()
@@ -121,11 +115,11 @@ class AI2ThorEnv(gym.Env):
             self.rnc.teleport_to(place_with_rtn)
 
             self.start_point = self.rnc.get_agent_pos_and_rotation()
-            # # 打印当前位置
+            # # print current position
             # pos = get_agent_pos_and_rotation(self)
-            # print("ROXXI: 当前agent位置: ", pos)
+            # print("ROXXI: current agent position: ", pos)
             # pose = thor_agent_pose(self.controller)
-            # print("ROXXI: 当前agent姿态: ", pose)
+            # print("ROXXI: current agent pose: ", pose)
 
 
 
@@ -150,7 +144,7 @@ class AI2ThorEnv(gym.Env):
                 self.initial_path_length = self.nu.get_path_cost_to_target_point(self.cur_pos,
                                                                                  self.current_target_point,
                                                                                  self.reachable_positions)
-                # 每个reset才更新一次，episode重新开始才更新
+                # update initial_path every reset, update when episode starts
                 self.initial_path = self.nu.get_path_to_target_point(self.cur_pos,
                                                                      self.current_target_point,
                                                                      self.reachable_positions)
@@ -221,7 +215,6 @@ class AI2ThorEnv(gym.Env):
         # obs: {image, is_first, is_terminal}  all np.ndarray
 
     def _get_obs(self, event):
-        # 返回 obs 字典，Dreamer3 兼容        
         raw_image = event.cv2img  # shape: (H, W, 3), dtype: uint8, BGR channel
         target_size = (self.observation_space["image"].shape[1], self.observation_space["image"].shape[0])  # (width, height)
         if raw_image.shape[:2] != (target_size[1], target_size[0]):
@@ -230,7 +223,7 @@ class AI2ThorEnv(gym.Env):
             image = raw_image
         # print("ROXXI: image shape: ", image.shape)
         cur_xy = (self.nu.normalize_to_grid(self.cur_pos)[0][0], self.nu.normalize_to_grid(self.cur_pos)[0][2])
-        self.dreamer_path.append(cur_xy)  # 每个step更新一次dreamer_path
+        self.dreamer_path.append(cur_xy)  # update dreamer_path every step
         # print("ROXXI: dreamer_path: ", self.dreamer_path)
         obs = {
             "image": image
@@ -261,44 +254,42 @@ class AI2ThorEnv(gym.Env):
 
     def _compute_reward_done_dense(self, event, action_name, info, step_count):
         """
-        新的奖励函数设计：
-        1. 距离奖励: y = 1 - x (x = 当前距离/最初距离)
-        2. 角度奖励: y = cos(a) (a = 当前朝向与目标朝向的差值)
-        3. 时间惩罚: p1 = -time_penalty * step_count
-        5. 前进奖励: +forward_bonus
+        1. distance reward: y = 1 - x (x = current distance / initial distance)
+        2. angle reward: y = cos(a) (a = current angle - target angle)
+        3. time penalty: p1 = -time_penalty * step_count
+        4. target reward
         """
-        # 初始化奖励
         reward = 0.0
         distance_reward_weight = 3.0      
         angle_reward_weight = 1.5         
         time_penalty_weight = 1.0         
         
-        # 获取当前位置和目标位置
+        # get current position and target position
         self.cur_pos = self.rnc.get_agent_pos_and_rotation()
         current_xy = (self.cur_pos[0][0], self.cur_pos[0][2])
         target_xy = (self.current_target_point.x, self.current_target_point.y)
         
-        # 1. 距离奖励: y = 1 - x (x = 当前距离/最初距离)
+        # 1. distance reward: y = 1 - x (x = current distance / initial distance)
         distance_reward = 0.0
-        if self.initial_path_length == 0:  # 已经在目标点
+        if self.initial_path_length == 0:  # already in the target point
             target_reached = True
         else:
-            # 使用A*路径长度作为距离度量
+            # use A* path length as distance measure
             # try:
             self.current_path_length = self.get_current_path_length()
             distance_ratio = self.current_path_length / self.initial_path_length
-            distance_reward = 1.0 - distance_ratio  # 最大1,最小无穷小
+            distance_reward = 1.0 - distance_ratio  
             # except:
-            # # 如果A*失败，使用欧氏距离
+            # # if A* fails, use Euclidean distance
             # initial_distance = np.sqrt((self.start_point[0][0] - target_xy[0])**2 + 
             #                         (self.start_point[0][2] - target_xy[1])**2)
             # current_distance = np.sqrt((current_xy[0] - target_xy[0])**2 + (current_xy[1] - target_xy[1])**2)
             # distance_ratio = current_distance / initial_distance
             # distance_reward = 1.0 - distance_ratio
+         
+        reward += distance_reward * distance_reward_weight
         
-        reward += distance_reward * distance_reward_weight # 距离奖励权重
-        
-        # 2. 角度奖励: y = cos(a) (a = 当前朝向与目标朝向的差值)
+        # 2. angle reward: y = cos(a) (a = current angle - target angle)
         current_yaw = self.cur_pos[1][1]
         target_yaw = np.arctan2(target_xy[1] - current_xy[1], target_xy[0] - current_xy[0])
         target_yaw = np.degrees(target_yaw)
@@ -310,30 +301,30 @@ class AI2ThorEnv(gym.Env):
             angle_diff = 360 - angle_diff
         
         angle_reward = np.cos(np.radians(angle_diff))
-        reward += angle_reward * angle_reward_weight  # 角度奖励权重
+        reward += angle_reward * angle_reward_weight  # angle reward weight
         
-        # 3. 时间惩罚: p1 = -time_penalty * step_count
-        # 使用对数增长的时间惩罚，避免惩罚过大
+        # 3. time penalty: p1 = -time_penalty * step_count
+        # use logarithmic time penalty to avoid too much penalty
         time_penalty = time_penalty_weight * np.log(1 + step_count) * -1
         reward += time_penalty
         
         
-        # 5. 到达目标奖励
+        # 4. target reward
         target_reached = False
         if self.current_path_length <= 0.0:
             target_reached = True
         
-        # 处理终止状况
+        # handle termination
         done = False
         if target_reached:
             done = True
-            reward += 1000.0  # 减少到达目标奖励，但仍保持较大
+            reward += 1000.0  
             info["target"] = True
             # print("ROXXI: ------------------------------We are in the center of the room!---------------------------------")
         
-        # 调试信息
-        reward_debug = 0  # 开启调试信息
-        # if step_count % 10 == 0 and reward_debug:  # 每10步打印一次
+        # debug information
+        reward_debug = 0  # enable debug information
+        # if step_count % 10 == 0 and reward_debug:  # print every 10 steps
         if done and reward_debug:
             status = "Target Reached" if target_reached else  ""
             print(f"----------------Step {step_count}-- {status}-------------------")
@@ -342,7 +333,7 @@ class AI2ThorEnv(gym.Env):
             print(f"time_penalty={time_penalty:.3f},")
             print(f"total_reward={reward:.3f}")
         
-        # 将奖励组件添加到info中，供外部记录
+        # add reward components to info for external recording
         info["reward_components"] = {
             "distance_reward": distance_reward * distance_reward_weight,
             "angle_reward": angle_reward * angle_reward_weight,
@@ -354,45 +345,46 @@ class AI2ThorEnv(gym.Env):
 
     def _compute_reward_done_collided(self, event, action_name, info, step_count):
         """
-        新的奖励函数设计：
-        1. 距离奖励: y = 1 - x (x = 当前距离/最初距离)
-        2. 角度奖励: y = cos(a) (a = 当前朝向与目标朝向的差值)
-        3. 时间惩罚: p1 = -time_penalty * step_count
-        5. 前进奖励: +forward_bonus
+        new reward function design:
+        1. distance reward: y = 1 - x (x = current distance / initial distance)
+        2. angle reward: y = cos(a) (a = current angle - target angle)
+        3. time penalty: p1 = -time_penalty * step_count
+        4. forward bonus: +forward_bonus
+        !!! if use this collided setting, please set reward_set = "collided" in tools.py.  (to be modified) ！！！
         """
-        # 初始化奖励
+        # initialize reward
         reward = 0.0
         distance_reward_weight = 3.0      
         angle_reward_weight = 1.5         
         time_penalty_weight = 1.0         
         forward_bonus_weight = 0.5        
         
-        # 获取当前位置和目标位置
+        # get current position and target position
         self.cur_pos = self.rnc.get_agent_pos_and_rotation()
         current_xy = (self.cur_pos[0][0], self.cur_pos[0][2])
         target_xy = (self.current_target_point.x, self.current_target_point.y)
         
-        # 1. 距离奖励: y = 1 - x (x = 当前距离/最初距离)
+        # 1. distance reward: y = 1 - x (x = current distance / initial distance)
         distance_reward = 0.0
-        if self.initial_path_length == 0:  # 已经在目标点
+        if self.initial_path_length == 0:  # already in the target point
             target_reached = True
         else:
-            # 使用A*路径长度作为距离度量
+            # use A* path length as distance measure
             # try:
             self.current_path_length = self.get_current_path_length()
             distance_ratio = self.current_path_length / self.initial_path_length
-            distance_reward = 1.0 - distance_ratio  # 最大1,最小无穷小
+            distance_reward = 1.0 - distance_ratio  
             # except:
-            # 如果A*失败，使用欧氏距离
+            # if A* fails, use Euclidean distance
             # initial_distance = np.sqrt((self.start_point[0][0] - target_xy[0])**2 + 
             #                         (self.start_point[0][2] - target_xy[1])**2)
             # current_distance = np.sqrt((current_xy[0] - target_xy[0])**2 + (current_xy[1] - target_xy[1])**2)
             # distance_ratio = current_distance / initial_distance
             # distance_reward = 1.0 - distance_ratio
     
-        reward += distance_reward * distance_reward_weight # 距离奖励权重
+        reward += distance_reward * distance_reward_weight 
         
-        # 2. 角度奖励: y = cos(a) (a = 当前朝向与目标朝向的差值)
+        # 2. angle reward: y = cos(a) (a = current angle - target angle)
         current_yaw = self.cur_pos[1][1]
         target_yaw = np.arctan2(target_xy[1] - current_xy[1], target_xy[0] - current_xy[0])
         target_yaw = np.degrees(target_yaw)
@@ -404,46 +396,46 @@ class AI2ThorEnv(gym.Env):
             angle_diff = 360 - angle_diff
         
         angle_reward = np.cos(np.radians(angle_diff))
-        reward += angle_reward * angle_reward_weight  # 角度奖励权重
+        reward += angle_reward * angle_reward_weight  # angle reward weight
         
-        # 3. 时间惩罚: p1 = -time_penalty * step_count
-        # 使用对数增长的时间惩罚，避免惩罚过大
+        # 3. time penalty: p1 = -time_penalty * step_count
+        # use logarithmic time penalty to avoid too much penalty
         time_penalty = time_penalty_weight * np.log(1 + step_count) * -1
         reward += time_penalty
 
-        # # 4. 原地不动惩罚: 如果一段时间内位置没有明显变化，则给予惩罚
+        # # 4. still penalty: if the position does not change for a period of time, then give penalty
         # # 记录agent最近的若干步的位置
         # if not hasattr(self, 'position_history'):
         #     self.position_history = []
-        # # 记录当前位置（只取x, z坐标，忽略y高度和朝向）
+            # # record current position (only x, z coordinates, ignore y height and orientation)
         # current_pos_2d = (round(self.cur_pos[0][0], 2), round(self.cur_pos[0][2], 2))
         # self.position_history.append(current_pos_2d)
-        # # 只保留最近N步的位置
+        # # only keep the last N steps' positions
         # N = 3
         # if len(self.position_history) > N:
         #     self.position_history.pop(0)
-        # # 判断最近N步内位置是否几乎没有变化（阈值可调）
+        # # check if the position has changed for the last N steps (threshold can be adjusted)
         # still_count = 0
         # if len(self.position_history) == N:
-        #     # 计算所有位置与第一个位置的距离
+        #     # calculate the distance between all positions and the first position
         #     base_pos = self.position_history[0]
         #     threshold = 0.05  # 5cm以内算作没动
         #     if all(np.linalg.norm(np.array(pos) - np.array(base_pos)) < threshold for pos in self.position_history):
         #         still_count = 1
-        # # 原地不动惩罚
+        # # still penalty: if the position does not change for a period of time, then give penalty
         # still_penalty = (still_penalty_weight * still_count) + still_count * (time_penalty / time_penalty_weight)
         # reward -= still_penalty
         
-        # 5. 前进奖励
+        # 5. forward bonus
         if action_name == "MoveAhead":
-            reward += forward_bonus_weight * 1# 前进奖励
+            reward += forward_bonus_weight * 1# forward bonus
         
         # 6. 碰撞惩罚
         collided = False
-        if not event.metadata["lastActionSuccess"]:  # 如果移动失败，正常来说就是碰到东西了
+        if not event.metadata["lastActionSuccess"]:  # if the move fails, it is usually because of collision
             # print("ROXXI: agent collided with something!")
             collided = True
-        # # 用raycast检查正前方是否有墙
+        # # use raycast to check if there is a wall in front
         #     query = self.controller.step(
         #         action="GetCoordinateFromRaycast",
         #         x=0.5,  # raycast from the center of the agent pov
@@ -452,28 +444,28 @@ class AI2ThorEnv(gym.Env):
         #     if query.metadata["actionReturn"] is not None:  
         #         print("Agent 撞墙了！")
 
-        
-        # 7. 到达目标奖励
+
+        # 6. target reward
         target_reached = False
         if self.current_path_length <= 0.0:
             target_reached = True
         
-        # 处理终止状况
+        # handle termination
         done = False
         if collided:
             done = True
-            reward -= 50.0   # 减少碰撞惩罚
+            reward -= 50.0   # reduce collision penalty
             info["collided"] = True
             # print("ROXXI: ------------------------------Agent collided with something!---------------------------------")
         if target_reached:
             done = True
-            reward += 200.0  # 减少到达目标奖励，但仍保持较大
+            reward += 200.0  # reduce target reward, but still keep large
             info["target"] = True
             # print("ROXXI: ------------------------------We are in the center of the room!---------------------------------")
         
-        # 调试信息
-        reward_debug = 0  # 开启调试信息
-        # if step_count % 10 == 0 and reward_debug:  # 每10步打印一次
+        # debug information
+        reward_debug = 0  # enable debug information
+        # if step_count % 10 == 0 and reward_debug:  # print every 10 steps
         if done and reward_debug:
             status = "Target Reached" if target_reached else ("Collided" if collided else "")
             print(f"----------------Step {step_count}-- {status}-------------------")
@@ -483,7 +475,7 @@ class AI2ThorEnv(gym.Env):
             print(f"forward_bonus={forward_bonus_weight if action_name=='MoveAhead' else 0:.3f}")
             print(f"total_reward={reward:.3f}")
         
-        # 将奖励组件添加到info中，供外部记录
+            # add reward components to info for external recording
         info["reward_components"] = {
             "distance_reward": distance_reward * distance_reward_weight,
             "angle_reward": angle_reward * angle_reward_weight,
@@ -517,6 +509,7 @@ class AI2ThorEnv(gym.Env):
 
         return self.current_path_length
 
+    # draw topdown frame
     def get_top_down_frame(self, dreamer_path, initial_path, floor_cut=0.1):
         topdown_img = thor_topdown_img(self.controller)
         img = Image.fromarray(topdown_img)

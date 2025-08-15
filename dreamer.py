@@ -21,7 +21,6 @@ import torch
 from torch import nn
 from torch import distributions as torchd
 
-# pytorch张量转化为numpy数组
 to_np = lambda x: x.detach().cpu().numpy()
 
 
@@ -42,16 +41,16 @@ class Dreamer(nn.Module):
         self._should_expl = tools.Until(int(config.expl_until / config.action_repeat))
         self._metrics = {}
         # this is update step
-        self._step = logger.step // config.action_repeat # 当前的step
-        self._dataset = dataset #generator, episode数据，包含reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
-        self._wm = models.WorldModel(obs_space, act_space, self._step, config) # 世界模型
-        self._task_behavior = models.ImagBehavior(config, self._wm) # 任务行为模型  ImagBehavior是行为模型，它根据世界模型来生成动作
+        self._step = logger.step // config.action_repeat # current step
+        self._dataset = dataset #generator, episode data including reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
+        self._wm = models.WorldModel(obs_space, act_space, self._step, config) # world model
+        self._task_behavior = models.ImagBehavior(config, self._wm) 
         if (
             config.compile and os.name != "nt"
         ):  # compilation is not supported on windows
             self._wm = torch.compile(self._wm)
             self._task_behavior = torch.compile(self._task_behavior)
-        reward = lambda f, s, a: self._wm.heads["reward"](f).mean() # 奖励函数  f是特征，s是状态，a是动作
+        reward = lambda f, s, a: self._wm.heads["reward"](f).mean()
         self._expl_behavior = dict(
             greedy=lambda: self._task_behavior,
             random=lambda: expl.Random(config, act_space),
@@ -59,7 +58,7 @@ class Dreamer(nn.Module):
         )[config.expl_behavior]().to(self._config.device)
         self._update_count = 0
 
-    def __call__(self, obs, reset, state=None, training=True): # 直接调用响应的函数。训练模式下，训练模型，预测动作，更新模型
+    def __call__(self, obs, reset, state=None, training=True): #  main training loop
         step = self._step
         # print(f"ROXXI: calling agent dreamer")
         if training:
@@ -72,7 +71,7 @@ class Dreamer(nn.Module):
             for _ in range(steps):
                 data = next(self._dataset)
                 # print("ROXXI: data:", data)
-                self._train(data)  # 这里就把经验池里的数据送入训练，包含reward
+                self._train(data)  # feed data into training
                 self._update_count += 1
                 self._metrics["update_count"] = self._update_count
             # print("b")
@@ -84,11 +83,10 @@ class Dreamer(nn.Module):
                     openl = self._wm.video_pred(next(self._dataset))
                     self._logger.video("train_openl", to_np(openl))
                 print("ROXXI: Calling agent print metrics")
-                self._logger.write(fps=True)  # 训练时打印参数
+                self._logger.write(fps=True)  # print parameters
             # print("c")
         # print("ROXXI: start agent policy")
-        policy_output, state = self._policy(obs, state, training) #输出动作，更新状态
-        # print("ROXXI: end agent policy")
+        policy_output, state = self._policy(obs, state, training) 
 
 
         if training:
@@ -137,7 +135,7 @@ class Dreamer(nn.Module):
         reward = lambda f, s, a: self._wm.heads["reward"](
             self._wm.dynamics.get_feat(s)
         ).mode()
-        metrics.update(self._task_behavior._train(start, reward)[-1])  #基于 imagination rollout 的 actor-critic（AC）训练
+        metrics.update(self._task_behavior._train(start, reward)[-1])  # actor-critic（AC） training based on imagination rollout
         if self._config.expl_behavior != "greedy":
             mets = self._expl_behavior.train(start, context, data)[-1]
             metrics.update({"expl_" + key: value for key, value in mets.items()})
@@ -153,16 +151,14 @@ def count_steps(folder):
 
 
 def make_dataset(episodes, config):
-    generator = tools.sample_episodes(episodes, config.batch_length)  # 生成的generator卡在这里了
+    generator = tools.sample_episodes(episodes, config.batch_length)  
     dataset = tools.from_generator(generator, config.batch_size)
     return dataset
 
 
 def make_env(config, mode, id):
     suite, task = config.task.split("_", 1)
-    # dmc_walker_walk 会被分成 suite="dmc" 和 task="walker_walk"
-
-    # 动作空间包装。离散空间用OneHotAction包装，连续空间用NormalizeActions包装，动作归一化到 [-1, 1]
+  
     if suite == "dmc":
         import envs.dmc as dmc
 
@@ -214,12 +210,11 @@ def make_env(config, mode, id):
     elif suite == "ai2thor":
         import envs.ai2thor_env as ai2thor_env
         env = ai2thor_env.AI2ThorEnv(config)
-        env = wrappers.OneHotAction(env)  # 适用于离散动作空间
+        env = wrappers.OneHotAction(env)  # OneHotAction is for discrete action space
     else:
         raise NotImplementedError(suite)
 
-    # 包装环境，添加时间限制、动作选择、唯一ID等
-    env = wrappers.TimeLimit(env, config.time_limit)  # 限制一个episode的step数量
+    env = wrappers.TimeLimit(env, config.time_limit)  # limit the number of steps in an episode
     env = wrappers.SelectAction(env, key="action")
     env = wrappers.UUID(env)
     if suite == "minecraft":
@@ -250,7 +245,7 @@ def main(config):
 
     #---------------------------------create envs---------------------------------
     print("Create envs.")
-    # 加载训练和评估用的 episode 数据
+    # load training and evaluation episode data
     if config.offline_traindir:
         directory = config.offline_traindir.format(**vars(config))
     else:
@@ -305,7 +300,7 @@ def main(config):
             logprob = random_actor.log_prob(action)
             return {"action": action, "logprob": logprob}, None
 
-        # 生成随机动作
+        # generate random action
         state = tools.simulate(
             random_agent,
             train_envs,
@@ -321,7 +316,7 @@ def main(config):
         print(f"Logger: ({logger.step} steps).")
 
     print("Simulate agent.")
-    # train_eps: 训练数据集 包含reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
+    # train_eps: training data set including reward，discount，image，action，is_first，is_last，is_terminal，is_first_last_terminal
     train_dataset = make_dataset(train_eps, config)
     eval_dataset = make_dataset(eval_eps, config)
 
@@ -348,34 +343,31 @@ def main(config):
     # ---------------------------start training-----------------------------------
     while agent._step < config.steps + config.eval_every:
         # print("ROXXI: Calling training print metrics")
-        logger.write()    # 仅仅print了step数，打印训练参数
+        logger.write()   
         # print(f"ROXXI:step:{agent._step} | state:{state}")
-        # 满足条件后评估
         if config.eval_episode_num > 0:
             print("Start evaluation.")
             eval_policy = functools.partial(agent, training=False)
-            # 评估过程中同时保存dreamer_path和initial path
+            # save dreamer_path and initial path during evaluation
             tools.simulate(
-                eval_policy,  # 传入只评估的agent
+                eval_policy,  # agent for evaluation
                 eval_envs,
                 eval_eps,
                 config.evaldir,
                 logger,
                 is_eval=True,
                 episodes=config.eval_episode_num,
-            ) # 用 agent 在评估环境上跑若干条 episode，收集评估数据
+            ) # use agent to run several episodes in evaluation environment, collect evaluation data
 
-            # 在每次评估结束后画出两个path，并保存视频
-
-            if config.video_pred_log:  # 打印出wm隐藏层的视频
+            if config.video_pred_log:  # print video of wm hidden layer
                 video_pred = agent._wm.video_pred(next(eval_dataset))
                 logger.video("eval_openl", to_np(video_pred))
                 print("ROXXI: latent space video_pred saved")
-                # [真实图像 | 模型预测图像 | 误差图像]
+                # [real image | dynamic prediction image | error image]
                 
         print("Start training.")
         state = tools.simulate(
-            agent,  # 传入训练的agent
+            agent,  
             train_envs,
             train_eps,  # cache
             config.traindir,
@@ -403,7 +395,7 @@ if __name__ == "__main__":
     args, remaining = parser.parse_known_args()
     configs = yaml.safe_load(
         (pathlib.Path(sys.argv[0]).parent / "configs.yaml").read_text()
-    ) #存放不同数据集对应的设置
+    ) # store settings for different datasets
 
     def recursive_update(base, update):
         for key, value in update.items():
@@ -413,7 +405,7 @@ if __name__ == "__main__":
                 base[key] = value
 
     name_list = ["defaults", *args.configs] if args.configs else ["defaults"]
-    defaults = {}  # 存放config里面的设置
+    defaults = {}  # store settings in config
     for name in name_list:
         recursive_update(defaults, configs[name])
     parser = argparse.ArgumentParser()

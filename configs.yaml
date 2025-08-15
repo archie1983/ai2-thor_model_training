@@ -9,24 +9,24 @@ defaults:
   deterministic_run: False
   steps: 1e6
   parallel: False
-  eval_every: 1e4 #1e4
-  eval_episode_num: 10 #10
+  eval_every: 1e4 # eval after every x steps
+  eval_episode_num: 10 
   log_every: 1e4
   reset_every: 0
   device: 'cuda:0'
   compile: True
   precision: 32
   debug: False
-  video_pred_log: True #True
+  video_pred_log: True # Store dynamic predictor outcome
 
   # Environment
   task: 'ai2thor_nav'
   size: [64, 64]
   envs: 1
-  action_repeat: 2 #2  # action重复次数
-  time_limit: 1000  # 每个episode最多1000步
+  action_repeat: 2 
+  time_limit: 1000  # max steps on each episode
   grayscale: False
-  prefill: 1000 #2500
+  prefill: 1000 # prefill experience pool before training.
   reward_EMA: True
 
   # Model
@@ -54,7 +54,6 @@ defaults:
     {layers: 2, dist: 'symlog_disc', loss_scale: 1.0, outscale: 0.0}
   cont_head:
     {layers: 2, loss_scale: 1.0, outscale: 1.0}
-  # 损失函数的超参数
   dyn_scale: 0.5
   rep_scale: 0.1
   kl_free: 1.0
@@ -185,7 +184,7 @@ debug:
   batch_length: 20
 
 ai2thor:
-  size: [64, 64]
-  habitat_id: 9999
+  size: [64, 64] # pov size
+  habitat_id: 9999 # procthor sence
   action_list: ["MoveAhead", "RotateLeft", "RotateRight"]
   actor: {dist: 'onehot', std: 'none'}

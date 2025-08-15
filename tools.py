@@ -130,7 +130,7 @@ class Logger:
 def simulate(
     agent,
     envs,
-    cache,  # 经验缓存replay buffer。是用来保存为episodes文件的
+    cache,  # replay buffer. used to save episodes files
     directory,
     logger,
     is_eval=False,
@@ -154,7 +154,6 @@ def simulate(
 
     vis_dreamer_path = []
     vis_initial_path = []
-    # steps和episodes为0则不限制，否则为输入的限制数
     while (steps and step < steps) or (episodes and episode < episodes):
         # reset envs if necessary
         # print(f"ROXXI: step:{step} | episode:{episode} | steps:{steps} | episodes:{episodes}")
@@ -164,7 +163,7 @@ def simulate(
         if done.any(): 
             indices = [index for index, d in enumerate(done) if d]
             results = [envs[i].reset() for i in indices]
-            vis_dreamer_path = []  # 每个episode开始时清空
+            vis_dreamer_path = []  # clear dreamer_path every episode
             vis_initial_path = []
             results = [r() for r in results]
 
@@ -186,8 +185,8 @@ def simulate(
         action, agent_state = agent(obs, done, agent_state)
         # print(f"ROXXI: b: step agents done!--------------------------------------------")
         # print("ROXXI: ", done)
-        # agent policy根据观测的环境输出动作，action为ac决定的动作
-        # state为rssm的状态，state（latent，actions），latent就包含stoch和deter
+        # agent policy outputs action based on the observed environment, action is the action decided by ac
+        # state is the state of rssm, state（latent，actions）, latent contains stoch and deter
         # -------------------------step agents------------------------------------
 
         if isinstance(action, dict):
@@ -200,18 +199,18 @@ def simulate(
         assert len(action) == len(envs)
 
         # -----------------------------step envs--------------------------------
-        #   这里开始交互环境
-        # 如dmc环境，step返回的results是（obs, reward, done, info），info包含discount
+        #   start interacting with environment      
+        # for dmc environment, step returns results (obs, reward, done, info), info contains discount
         # results = [e.step(a) for e, a in zip(envs, action)]  "original function"
         results = [e.step(a) for e, a in zip(envs, action)]
-        results = [r() for r in results]  # [obs, reward, done, info]取出包
+        results = [r() for r in results]  # [obs, reward, done, info] extract package
         obs, reward, done = zip(*[p[:3] for p in results])
         # -----------------------------step envs--------------------------------
         vis_dreamer_path = results[0][3]['dreamer_path']  # info['dreamer_path']
         vis_initial_path = results[0][3]['initial_path']  # info['initial_path']
 
         # tuple to list
-        obs = list(obs)  # [{}]列表里面有一个obs字典（如果是多个envs是不是就是多个？）
+        obs = list(obs)  # [{}] list contains one obs dictionary (if there are multiple envs, is it multiple?)
         reward = list(reward)
         done = np.stack(done)  # np.ndarray
         episode += int(done.sum())
@@ -230,7 +229,7 @@ def simulate(
             transition["reward"] = r  
             transition["discount"] = info.get("discount", np.array(1 - float(d)))
             # transition{image, is_frist, is_terminal,action, logprob,reward, discount}  ALL np.ndarray
-            add_to_cache(cache, env.id, transition) # 这里把result放进去了cache(经验缓存replay buffer)
+            add_to_cache(cache, env.id, transition) # put result into cache(replay buffer)
 
         # -----------------------------episode done--------------------------------
         if done.any():
@@ -239,7 +238,7 @@ def simulate(
             # logging for done episode
             for i in indices:
                 save_episodes(directory, {envs[i].id: cache[envs[i].id]})
-                # episode结束后，cache（包含reward），保存为npz文件并写入train_eps经验池
+                # after episode, cache (contains reward) is saved as npz file and written into train_eps experience pool
                 length = len(cache[envs[i].id]["reward"]) - 1
                 score = float(np.array(cache[envs[i].id]["reward"]).sum())
                 video = cache[envs[i].id]["image"]
@@ -252,49 +251,49 @@ def simulate(
                         )
                         # log items won't be used later
                         cache[envs[i].id].pop(key)
-                if not is_eval:  # 训练
+                if not is_eval:  # training
                     step_in_dataset = erase_over_episodes(cache, limit)
                     logger.scalar(f"dataset_size", step_in_dataset)
                     logger.scalar(f"train_return", score)
                     logger.scalar(f"train_length", length)
                     logger.scalar(f"train_episodes", len(cache))
                     logger.write(step=logger.step)
-                else:  # 评估
+                else:  # evaluation
                     if not "eval_lengths" in locals():
                         eval_lengths = []
                         eval_scores = []
-                        eval_successes = []  # 记录成功状态
-                        eval_path_efficiencies = []  # 记录路径效率
+                        eval_successes = []  # record success status
+                        eval_path_efficiencies = []  # record path efficiency
                         eval_done = False
                     
-                    # -------------------评估指标收集-----------------------------
-                    # 记录每个episode的成功状态
+                    # -------------------evaluation metric collection-----------------------------
+                    # record success status of each episode
                     success = info.get("target", False)
                     eval_successes.append(float(success))
                     
-                    # 记录路径效率 (initial_path_length / dreamer_path_length)
-                    path_efficiency = 1.0  # 默认值
-                                    # 使用路径数组长度计算路径效率
+                    # record path efficiency (initial_path_length / dreamer_path_length)
+                    path_efficiency = 1.0  # default value
+                                    # use path array length to calculate path efficiency
                     initial_path_length = len(vis_initial_path) if vis_initial_path else 1
                     dreamer_path_length = len(vis_dreamer_path) if vis_dreamer_path else 1
                     
-                    reward_set = "dense"  # using for debug
+                    reward_set = "not collided"  # using for debug
                     if reward_set == "collided":
                         collided = info.get("collided", False)
-                        # 计算路径效率：最优路径长度 / 实际路径长度
+                        # calculate path efficiency: optimal path length / actual path length
                         if collided:
-                            # 如果碰撞了，说明路径效率很低，设置一个很大的dreamer_path长度
+                            # if collided, it means path efficiency is low, set a large dreamer_path length
                             path_efficiency = 0.01  
                         else:
                             path_efficiency = initial_path_length / max(dreamer_path_length, 1e-6)
                             # print(f"路径效率计算: vis_initial_path长度={initial_path_length}, vis_dreamer_path长度={dreamer_path_length}, 效率={path_efficiency:.3f}")
-                    elif reward_set == "dense":
+                    elif reward_set == "not collided":
                         path_efficiency = initial_path_length / max(dreamer_path_length, 1e-6)
 
 
                     eval_path_efficiencies.append(path_efficiency)
                     
-                    # 记录每个episode的奖励数据（保持原有功能）
+                    # record reward data of each episode (keep original function)
                     episode_rewards = cache[envs[i].id]["reward"]
                     episode_total_reward = sum(episode_rewards)
                     episode_avg_reward = episode_total_reward / len(episode_rewards)
@@ -311,7 +310,7 @@ def simulate(
                     length = sum(eval_lengths) / len(eval_lengths)
                     logger.video(f"eval_policy", np.array(video)[None])
 
-                    # -------------------ROXXI ：保存dreamer_path--------------------------------
+                    # -------------------ROXXI ：save dreamer_path--------------------------------
 
                     # print("ROXXI: dreamer_path: ", dreamer_path)
                     # print("ROXXI: initial_path: ", initial_path)
@@ -321,22 +320,19 @@ def simulate(
                     topdown_dir = logger._logdir / "topdown"
                     topdown_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # 为当前step创建子文件夹
                     step_topdown_dir = topdown_dir / f"step_{logger.step}"
                     step_topdown_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # 计算当前是第几次评估 (从1开始)
-                    current_episode = len(eval_scores)  # 或者直接用episode变量？
-                    
+                    current_episode = len(eval_scores)  
                     img_name = f"episode_{current_episode}_{info['target']}_{info['habitat_id']}.png"
                     img_path = step_topdown_dir / img_name
                     cv2.imwrite(str(img_path), topdown_img)
                     img_name_original = f"original_episode_{current_episode}_{info['habitat_id']}.png"
                     img_path_original = step_topdown_dir / img_name_original
                     cv2.imwrite(str(img_path_original), img_original)
-                    print(f"topdown图片已保存: {img_path}")
+                    print(f"topdown image saved: {img_path}")
 
-                    # -------------------ROXXI ：保存视频--------------------------------
+                    # -------------------ROXXI ：save video--------------------------------
                     print("Saving video...")
                     video_array = np.array(video)
                     if video_array.dtype != np.uint8:
@@ -345,11 +341,9 @@ def simulate(
                     video_dir = logger._logdir / "videos"
                     video_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # 为当前step创建子文件夹
                     step_video_dir = video_dir / f"step_{logger.step}"
                     step_video_dir.mkdir(parents=True, exist_ok=True)
-                    # 计算当前是第几次评估 (从1开始)
-                    current_episode = len(eval_scores)  # 或者直接用episode变量？
+                    current_episode = len(eval_scores)  
 
                     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                     video_name = f"episode_{current_episode}_{info['target']}.mp4"
@@ -360,32 +354,32 @@ def simulate(
                         out.write(frame)
                     out.release()
 
-                    print(f"视频已保存: {video_path}")
+                    print(f"video saved: {video_path}")
                     print(f"ROXXI: logger.step: {logger.step}, episode: {current_episode}")
                     # ---------------------------------------------------
 
        
                     
                     if len(eval_scores) >= episodes and not eval_done:
-                        # 计算成功率：成功次数 / 总评估次数
+                        # calculate success rate: success times / total evaluation times
                         success_rate = sum(eval_successes) / len(eval_successes)
                         
-                        # 计算平均路径效率
+                        # calculate average path efficiency
                         avg_path_efficiency = sum(eval_path_efficiencies) / len(eval_path_efficiencies)
                         
-                        # 记录主要评估指标
+                        # record main evaluation metrics
                         logger.scalar(f"eval_success_rate", success_rate)
                         logger.scalar(f"eval_avg_path_efficiency", avg_path_efficiency)
                         
-                        # 保持原有的指标记录
+                        # keep original metrics
                         logger.scalar(f"eval_return", score)
                         logger.scalar(f"eval_length", length)
                         logger.scalar(f"eval_episodes", len(eval_scores))
                         
-                        # 打印评估结果
-                        print(f"=========== 评估结果 (Step {logger.step}) ===========")
-                        print(f"成功率: {success_rate:.3f} ({sum(eval_successes)}/{len(eval_successes)})")
-                        print(f"平均路径效率: {avg_path_efficiency:.3f}")
+                        # print evaluation results
+                        print(f"=========== evaluation results (Step {logger.step}) ===========")
+                        print(f"success rate: {success_rate:.3f} ({sum(eval_successes)}/{len(eval_successes)})")
+                        print(f"average path efficiency: {avg_path_efficiency:.3f}")
                         print("================================================" )
                         
                         logger.write(step=logger.step)
@@ -397,7 +391,7 @@ def simulate(
             cache.popitem(last=False)
     # print(f"return:(step - steps, episode - episodes, done, length, obs, agent_state, reward):{step - steps, episode - episodes, done, length, obs, agent_state, reward}")
     return (step - steps, episode - episodes, done, length, obs, agent_state, reward)
-    # step：总交互数量（减steps是因为step += len(envs)加上了。  episode：总episode数量（减episodes是因为episode += int(done.sum())加上了。
+    # step: total interaction number (subtracted by steps because step += len(envs) is added.  episode: total episode number (subtracted by episodes because episode += int(done.sum()) is added.
 
 
 def add_to_cache(cache, id, transition):

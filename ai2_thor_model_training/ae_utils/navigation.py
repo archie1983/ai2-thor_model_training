@@ -1,6 +1,9 @@
 from thortils.utils import PriorityQueue, normalize_angles, euclidean_dist
 from thortils.navigation import _round_pose
 from enum import Enum
+from . import angle_to_turn_to_face_p2_from_p1, room_this_point_belongs_to, get_all_objects_of_type, is_point_inside_room_ground_truth
+from shapely.geometry import Point
+import math
 
 class AStarNode:
     '''
@@ -158,6 +161,22 @@ class NavigationAction(Enum):
 
         return new_node
 
+##
+# I want to implement a "scoring circle". Imagine circular zones (1 cell wide each) around the target point.
+# The optimal A* path would usually lead through all the zones right to the target starting at the outermost
+# and ending with the innermost and then the target. Usually the path would not go back to a zone that has
+# already been visited. I say *usually* because sometimes the obstacles in the scene would require to re-visit
+# a zone that has already been visited, but for our purposes (reaching the middle of the room) such cases
+# would be relatively rare. Now, the inferred path may not be as efficient and could potentially snake back
+# to where we have already been. We want to prevent that, so we should give a reward point for reaching a new
+# zone, but a penalty for reaching a visited one.
+#
+##
+class ScoringCircle:
+    def __init__(self, center_node):
+        self.center_node = center_node
+
+
 class NavigationUtils:
     '''
     Here we put it all together- We use the A* algorithm to do something useful. Initially just getting the path cost
@@ -175,14 +194,49 @@ class NavigationUtils:
                 self.destination)
 
     ##
+    # This will help find the angle required to turn to face the target.
+    # target_pos: position that we want to face (just x and y)
+    # our_pos: our current position (x, y and rotation)
+    # returns the angle required to turn from current position
+    ##
+    def angle_to_face_target(self, target_pos, our_pos):
+        # Define the coordinates of the two points
+        (Tx, Ty) = target_pos # x, y
+        (Ox, Oy, Or) = our_pos # x, y and yaw
+        # Calculate the vector components from point 1 to point 2
+        dx = Tx - Ox
+        dy = Ty - Oy
+        # Calculate the angle using atan2
+        angle_to_face_point2 = math.atan2(dx, dy)
+        # Convert the angle from radians to degrees
+        deg_to_turn_from_N = math.degrees(angle_to_face_point2)
+
+        # At this point we have a value that we need to be facing. If we are now looking at N, then
+        # we can turn by deg_to_turn_from_N and be where we want to be. But what about our current rotation?
+        # How much we need to turn by from the current yaw?
+        deg_to_turn_from_current = deg_to_turn_from_N - Or
+
+        # E.g., if we're going to turn -181, then it's easier to turn +179, so we do (x % 360)
+        # If we're +361, then (x % 360) will return +1.
+        while deg_to_turn_from_current >= 180: deg_to_turn_from_current = deg_to_turn_from_current - 360
+        while deg_to_turn_from_current <= -180: deg_to_turn_from_current += 360
+        while deg_to_turn_from_N >= 180: deg_to_turn_from_N = deg_to_turn_from_N - 360
+        while deg_to_turn_from_N <= -180: deg_to_turn_from_N += 360
+
+        print("Tx, Ty:", Tx, Ty, " Ox, Oy, Or: ", Ox, Oy, Or, " deg_to_turn_from_current: ", deg_to_turn_from_current, " deg_to_turn_from_N: ", deg_to_turn_from_N)
+
+        return deg_to_turn_from_current, deg_to_turn_from_N
+
+    ##
     # start_point:  where we start (start_position, start_rotation)
     # target_point: where we want to get to (target_position, target_rotation)
     # reachable_positions: Positions that are possible to reach (no objects are sitting in those places)
+    # close_enough: how close is enough to consider target achieved
     ##
-    def get_path_cost_to_target_point(self, start_point, target_point, reachable_positions_in):
+    def get_path_cost_to_target_point(self, start_point, target_point, reachable_positions_in, close_enough = 0.5):
         destination = ((target_point.x, 0.9009993672370911, target_point.y),
                        start_point[1])
-        print("AE: start_point: ", start_point, " target_point: ", target_point)
+        #print("AE: start_point: ", start_point, " target_point: ", target_point)
         # the defined 2D coordinates and same rotation as start position
         # Normalize angles in start and goal to be within 0 to 360 (see top comments)
         # Also, round the poses so that we don't have irrational numbers in them that would be hard to look up
@@ -222,8 +276,12 @@ class NavigationUtils:
                 continue
             # AE: If we're close enough to the end, then stop exploration and work backwards to reconstruct plan or
             # estimate path cost.
-            if euclidean_dist(destination[0], current_node.get_ai2thor_pose()) <= 0.5:
+            if euclidean_dist(destination[0], current_node.get_ai2thor_pose()) <= close_enough:
                 best_cost = cost[current_node.get_ai2thor_pose_and_rtn()]
+                (angle_req, deg_to_turn) = self.angle_to_face_target((target_point.x, target_point.y), current_node.get_xyr())
+                print("C_yaw: ", current_node.get_ai2thor_pose_and_rtn()[1][1], " angle_req: ", angle_req)
+                angle_req = self.normalize_yaw(angle_req)
+                #print("C_yaw: ", current_node.get_ai2thor_pose_and_rtn()[1][1], " angle_req: ", angle_req)
                 # here we will store our path
                 self.last_path_gen = []
                 # Now work it back
@@ -270,6 +328,89 @@ class NavigationUtils:
         # AE: print warning and return something.
         raise ValueError("Plan not found from {} to {}".format(start_point, destination))
         # return float("inf")
+
+    ##
+    # Finds the next door to navigate to given the current position
+    ##
+    def find_door_target(self, current_point_and_rtn, rooms_in_habitat, reachable_positions, controller):
+        point_for_room_search = (current_point_and_rtn[0], "", current_point_and_rtn[1])
+        cur_pos = ((current_point_and_rtn[0], 0.9009993672370911, current_point_and_rtn[1]),
+                   (0.0, float(current_point_and_rtn[2]), 0.0))
+        # cur_pos = self.rnc.get_agent_pos_and_rotation()
+        # print("cur_pos: ", cur_pos, "cur_pos2: ", cur_pos2)
+        # This is the room where we are
+        room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
+        print(room_of_placement)
+
+        doors = get_all_objects_of_type(controller, "Doorway")
+        # the target is not really the door, but a point in front of the door, so we will need to extract those.
+        # we will also want to know if the door is visible and if it is in the same room as we are
+        all_door_targets = []
+        selected_target = None
+
+        # print(doors[0])
+        for door in doors:
+            # find the centre of the door because we will want to arrive at the centre of the door, not the edge of
+            # the frame
+            door_center_pos = door["axisAlignedBoundingBox"]["center"]
+            #print("corners: ", door["axisAlignedBoundingBox"]["cornerPoints"])
+            #print("size: ", door["axisAlignedBoundingBox"]["size"])
+            #print("rotation: ", door["rotation"])
+            #print("isOpen: ", door["isOpen"])
+
+            # TODO: Use angle_to_turn_to_face_p2_from_p1 from ai2_thor_utils.py and incorporate it into the
+            # path planning so that at the end it turns to face the door.
+
+            target_position_tuple = (door_center_pos['x'], door_center_pos['y'], door_center_pos['z'])
+            target_position = {"x": door_center_pos['x'], "y": door_center_pos['y'], "z": door_center_pos['z']}
+            target_position_point = Point(door_center_pos['x'], door_center_pos['z'])
+            is_in_same_room = is_point_inside_room_ground_truth(target_position_tuple, room_of_placement[1])
+
+            # the distance to that point as A* goes
+            try:
+                door_path_length = self.get_path_cost_to_target_point(cur_pos,
+                                                                         target_position_point,
+                                                                         reachable_positions)
+            except ValueError as e:
+                door_path_length = 1000
+
+            # Ignore doors to which path could not be planned
+            if door_path_length < 1000:
+                all_door_targets.append({"pos": target_position,
+                                         "in_same_room": is_in_same_room,
+                                         "visible": door['visible'],
+                                         "distance": door_path_length})
+        #print("all_door_targets: ", all_door_targets)
+
+        # Ideally we want to get a door that is in the same room, but not yet visible, because we want to elicit
+        # the behaviour of seeking the door in our model.
+        # If that's not possible then at least a visible door in the same room where we are.
+        # If that's also not possible, then the nearest door.
+        same_room_invisible = [door_target for door_target in all_door_targets if
+                               door_target["in_same_room"] and not door_target["visible"]]
+
+        same_room_visible = [door_target for door_target in all_door_targets if
+                             door_target["in_same_room"] and door_target["visible"]]
+
+        same_room_invisible = sorted(same_room_invisible, key=lambda room_tuple: room_tuple["distance"])
+        same_room_visible = sorted(same_room_visible, key=lambda room_tuple: room_tuple["distance"])
+        all_rooms_sorted_by_distance = sorted(all_door_targets, key=lambda room_tuple: room_tuple["distance"])
+
+        # print("same_room_invisible: ", same_room_invisible)
+        # print("same_room_visible: ", same_room_visible)
+        # print("all_rooms_sorted_by_distance: ", all_rooms_sorted_by_distance)
+
+        if len(same_room_invisible) > 0:
+            selected_target = same_room_invisible[0]
+        elif len(same_room_visible) > 0:
+            selected_target = same_room_visible[0]
+        elif len(all_rooms_sorted_by_distance) > 0:
+            selected_target = all_rooms_sorted_by_distance[0]
+
+        if selected_target is not None:
+            return Point(selected_target["pos"]["x"], selected_target["pos"]["z"])
+        else:
+            raise ValueError("No door found that can be navigated to")
 
     ##
     # Normalize any input coordinate (e.g. (10.86666, 8.3333)) to the nearest valid grid point (e.g. (10.75, 8.25)).

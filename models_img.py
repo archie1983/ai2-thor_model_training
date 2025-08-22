@@ -64,36 +64,6 @@ class TimestepEmbedder(nn.Module):
         return t_emb
 
 
-class LabelEmbedder(nn.Module):
-    """
-    Embeds class labels into vector representations. Also handles label dropout for classifier-free guidance.
-    """
-    def __init__(self, num_classes, hidden_size, dropout_prob):
-        super().__init__()
-        use_cfg_embedding = dropout_prob > 0
-        self.embedding_table = nn.Embedding(num_classes + use_cfg_embedding, hidden_size)
-        self.num_classes = num_classes
-        self.dropout_prob = dropout_prob
-
-    def token_drop(self, labels, force_drop_ids=None):
-        """
-        Drops labels to enable classifier-free guidance.
-        """
-        if force_drop_ids is None:
-            drop_ids = torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
-        else:
-            drop_ids = force_drop_ids == 1
-        labels = torch.where(drop_ids, self.num_classes, labels)
-        return labels
-
-    def forward(self, labels, train, force_drop_ids=None):
-        use_dropout = self.dropout_prob > 0
-        if (train and use_dropout) or (force_drop_ids is not None):
-            labels = self.token_drop(labels, force_drop_ids)
-        embeddings = self.embedding_table(labels)
-        return embeddings
-
-
 # ------------change-------------------
 class ImageLabelEmbedder(nn.Module):
     def __init__(self, hidden_size=768, dropout_prob=0.1, image_size=(256, 256), in_channels=3):
@@ -102,26 +72,28 @@ class ImageLabelEmbedder(nn.Module):
 
         # CNN for image feature extraction
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1),  # 128x128
+            nn.Conv2d(in_channels, 64, 3, stride=2, padding=1),  # 128x128
+            nn.GroupNorm(8, 64),
             nn.SiLU(),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),  # 64x64
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),  # 64x64
+            nn.GroupNorm(8, 128),
             nn.SiLU(),
-            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),  # 32x32
+            nn.Conv2d(128, 256, 3, stride=2, padding=1),  # 32x32
+            nn.GroupNorm(8, 256),
             nn.SiLU(),
             nn.AdaptiveAvgPool2d(1),  # Global average pooling
             nn.Flatten()
         )
 
-        # Calculate CNN output size, in case of error from different size of image
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, in_channels, *image_size)
-            cnn_output_size = self.cnn(dummy_input).shape[1]
-
-        # MLP for combining image features and left/right
-        self.mlp = nn.Sequential(
-            nn.Linear(cnn_output_size + 1, hidden_size * 4),  # +1 for binary turn info
+        # Action embedder (FiLM)
+        self.action_embed = nn.Sequential(
+            nn.Linear(1, 64),  # left/right (0/1) -> 64 dimension
             nn.SiLU(),
-            nn.Linear(hidden_size * 4, hidden_size * 2),
+            nn.Linear(64, 256 * 2)
+        )
+
+        self.mlp = nn.Sequential(
+            nn.Linear(256, hidden_size * 2),
             nn.SiLU(),
             nn.Linear(hidden_size * 2, hidden_size)
         )
@@ -151,10 +123,13 @@ class ImageLabelEmbedder(nn.Module):
 
         # Add turn info (convert to float and add dimension)
         turn_info = turn_info.float().unsqueeze(1)
-        combined_features = torch.cat([image_features, turn_info], dim=1)
+        action_emb = self.action_embed(turn_info)
 
         # Process through MLP
-        embeddings = self.mlp(combined_features)
+        scale = action_emb[:, :256]  # γ [B, 256]
+        shift = action_emb[:, 256:]  # β [B, 256]
+        fused_features = image_features * (1 + scale) + shift  # [B, 256]
+        embeddings = self.mlp(fused_features)
 
         # Handle classifier-free guidance
         use_dropout = self.dropout_prob > 0

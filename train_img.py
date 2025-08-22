@@ -211,7 +211,7 @@ def main(args):
     logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    opt = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=0)
 
     # Setup data:
     transform = transforms.Compose([
@@ -287,7 +287,7 @@ def main(args):
     start_time = time()
 
     logger.info(f"Training for {args.epochs} epochs...")
-    for epoch in range(60, args.epochs):
+    for epoch in range(0, args.epochs):
         #sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
         for next_img, cur_img, turn_info in loader:

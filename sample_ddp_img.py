@@ -13,12 +13,20 @@ For a simple single-GPU/CPU sampling script, see sample.py.
 """
 import torch
 import torch.distributed as dist
-from models import DiT_models
+import webdataset as wds
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
+from torchvision.datasets import ImageFolder
+from torchvision import transforms
+from models_img import DiT_models
 from download import find_model
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
 from tqdm import tqdm
+from glob import glob
 import os
+import tarfile, io, json, math
 from PIL import Image
 import numpy as np
 import math
@@ -46,28 +54,33 @@ def create_npz_from_sample_folder(sample_dir, num=50_000):
     return npz_path
 
 
-def generate_random_position(
-    xyz_min,
-    xyz_max,
-    batch_size,
-    angle_range: tuple = (0, 360),
-    device: str = "cuda"
-):
-    xyz_min = xyz_min.cpu()
-    xyz_max = xyz_max.cpu()
+def process_sample_for_inference(sample):
+    transform = transforms.Compose([
+        transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
+    ])
 
-    x = [random.uniform(xyz_min[0].item(), xyz_max[0].item()) for _ in range(batch_size)]
-    y = [random.uniform(xyz_min[1].item(), xyz_max[1].item()) for _ in range(batch_size)]
-    z = [random.uniform(xyz_min[2].item(), xyz_max[2].item()) for _ in range(batch_size)]
-    rot_deg = [random.uniform(angle_range[0], angle_range[1]) for _ in range(batch_size)]
+    cur_img = Image.open(io.BytesIO(sample["png.cur"])).convert("RGB")
+    label = json.loads(sample["json"].decode("utf-8"))
+    turn_info = torch.tensor(label["direction"], dtype=torch.long)
 
-    xyz = torch.tensor([x, y, z], device=device).T
-    xyz_norm = (xyz - xyz_min.to(device)) / (xyz_max.to(device) - xyz_min.to(device) + 1e-8)
+    return transform(cur_img), turn_info
 
-    rot_sin = torch.tensor([math.sin(math.radians(deg)) for deg in rot_deg], device=device).unsqueeze(1)
-    pos = torch.cat([xyz_norm, rot_sin], dim=1)
 
-    return pos
+def center_crop_arr(pil_image, image_size):
+    while min(*pil_image.size) >= 2 * image_size:
+        pil_image = pil_image.resize(
+            tuple(x // 2 for x in pil_image.size), resample=Image.BOX
+        )
+    scale = image_size / min(*pil_image.size)
+    pil_image = pil_image.resize(
+        tuple(round(x * scale) for x in pil_image.size), resample=Image.BICUBIC
+    )
+    arr = np.array(pil_image)
+    crop_y = (arr.shape[0] - image_size) // 2
+    crop_x = (arr.shape[1] - image_size) // 2
+    return Image.fromarray(arr[crop_y: crop_y + image_size, crop_x: crop_x + image_size])
 
 
 def main(args):
@@ -102,8 +115,6 @@ def main(args):
     ckpt_path = args.ckpt or f"DiT-XL-2-{args.image_size}x{args.image_size}.pt"
     checkpoint = find_model(ckpt_path)
     state_dict = checkpoint["ema"]
-    xyz_min = checkpoint["xyz_min"].to(device)
-    xyz_max = checkpoint["xyz_max"].to(device)
     model.load_state_dict(state_dict)
     model.eval()  # important!
     diffusion = create_diffusion(str(args.num_sampling_steps))
@@ -136,26 +147,42 @@ def main(args):
     assert total_samples % dist.get_world_size() == 0, "total_samples must be divisible by world_size"
     samples_needed_this_gpu = int(total_samples // dist.get_world_size())
     assert samples_needed_this_gpu % n == 0, "samples_needed_this_gpu must be divisible by the per-GPU batch size"
-    iterations = int(samples_needed_this_gpu // n)
-    pbar = range(iterations)
-    pbar = tqdm(pbar) if rank == 0 else pbar
-    total = 0
-    for _ in pbar:
-        # Sample inputs:
-        z = torch.randn(n, model.in_channels, latent_size, latent_size, device=device)
-        y = generate_random_position(xyz_min, xyz_max, n,(0, 360), device)
-        # continue
 
-        # Setup classifier-free guidance:
+    shards = sorted(glob(f"{args.data_path}/*.tar"))
+    dataset = (
+        wds.WebDataset(shards, shardshuffle=False, resampled=False, nodesplitter=wds.split_by_node, workersplitter=wds.split_by_worker)
+        .map(process_sample_for_inference)
+        .batched(args.per_proc_batch_size, partial=False)
+    )
+    loader = DataLoader(dataset, batch_size=None, num_workers=args.num_workers)
+    loader_iter = iter(loader)
+
+    samples_per_gpu = int(math.ceil(args.num_fid_samples / dist.get_world_size()))
+    iterations = int(math.ceil(samples_per_gpu / args.per_proc_batch_size))
+    total = 0
+    pbar = tqdm(range(iterations), desc=f"Rank {rank}") if rank == 0 else range(iterations)
+    for batch_idx in pbar:
+        try:
+            cur_imgs, turn_infos = next(loader_iter)
+        except StopIteration:
+            break
+
+        cur_imgs = cur_imgs.to(device)
+        turn_infos = turn_infos.to(device)
+        batch_size = cur_imgs.shape[0]
+
+        z = torch.randn(batch_size, 4, latent_size, latent_size, device=device)
+
         if using_cfg:
             z = torch.cat([z, z], 0)
-            #y_null = torch.tensor([1000] * n, device=device)
-            y_null = torch.zeros_like(y)
-            y = torch.cat([y, y_null], 0)
-            model_kwargs = dict(y=y, cfg_scale=args.cfg_scale)
+            null_imgs = torch.zeros_like(cur_imgs)
+            null_turns = torch.zeros_like(turn_infos)
+            y_imgs = torch.cat([cur_imgs, null_imgs], 0)
+            y_turns = torch.cat([turn_infos, null_turns], 0)
+            model_kwargs = {"y": (y_imgs, y_turns), "cfg_scale": args.cfg_scale}
             sample_fn = model.forward_with_cfg
         else:
-            model_kwargs = dict(y=y)
+            model_kwargs = {"y": (cur_imgs, turn_infos)}
             sample_fn = model.forward
 
         # Sample images:
@@ -173,6 +200,8 @@ def main(args):
             index = i * dist.get_world_size() + rank + total
             Image.fromarray(sample).save(f"{sample_folder_dir}/{index:06d}.png")
         total += global_batch_size
+        if total >= samples_per_gpu:
+            break
 
     # Make sure all processes have finished saving their samples before attempting to convert to .npz
     dist.barrier()
@@ -188,6 +217,8 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
     parser.add_argument("--vae",  type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--sample-dir", type=str, default="samples")
+    parser.add_argument("--data-path", type=str, required=True)
+    parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--per-proc-batch-size", type=int, default=32)
     parser.add_argument("--num-fid-samples", type=int, default=50_000)
     parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)

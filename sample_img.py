@@ -70,12 +70,13 @@ def main(args):
     #n = len(class_labels)
     #z = torch.randn(n, 4, latent_size, latent_size, device=device)
     # change---------------------------
+    # 0 means left, 1 means right
     conditions = [
-        {"current_image": "sample_cur_1.png", "turn_info": 0},  # 左转
-        {"current_image": "sample_cur_2.png", "turn_info": 1},  # 右转
+        {"current_image": "1.png", "turn_info": 0},
+        {"current_image": "1.png", "turn_info": 1},
     ]
 
-    # 加载当前图像和转向信息
+    # Loading
     current_images = []
     turn_infos = []
     for cond in conditions:
@@ -83,26 +84,21 @@ def main(args):
         current_images.append(img_tensor)
         turn_infos.append(cond["turn_info"])
 
-    # 堆叠成batch
     current_images = torch.cat(current_images, dim=0)  # (n, 3, H, W)
     turn_infos = torch.tensor(turn_infos, dtype=torch.long, device=device)  # (n,)
 
-    # 2. 准备噪声输入 --------------------------------------------
     n = len(conditions)
     z = torch.randn(n, 4, latent_size, latent_size, device=device)
+    z = torch.cat([z, z], 0)
 
-    # 3. 分类器无关引导设置 --------------------------------------
-    z = torch.cat([z, z], 0)  # 重复噪声
-
-    # 创建"空"条件 (用于CFG)
-    null_images = torch.zeros_like(current_images)  # 全零图像
-    null_turn = torch.zeros_like(turn_infos)  # 默认转向
+    null_images = torch.zeros_like(current_images)
+    null_turn = torch.zeros_like(turn_infos)
 
     y_images = torch.cat([current_images, null_images], 0)  # (2n, 3, H, W)
     y_turn = torch.cat([turn_infos, null_turn], 0)  # (2n,)
 
     model_kwargs = {
-        "y": (y_images, y_turn),  # 改为元组形式
+        "y": (y_images, y_turn),
         "cfg_scale": args.cfg_scale
     }
     # change END-----------------------

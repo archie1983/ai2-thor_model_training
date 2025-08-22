@@ -16,13 +16,16 @@ nohup torchrun --nnodes=1 --nproc_per_node=2 train.py --model DiT-S/8 --global-s
 # Pretrained learn
 nohup torchrun --nnodes=1 --nproc_per_node=2 train.py --model DiT-XL/2 --global-seed 42 --data-path ~/autodl-tmp/dataset/test --pretrained-path ~/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt --num-workers 1 --global-batch-size 32 --ckpt-every 10000 --epochs 200 > train.log 2>&1 &
 
-nohup torchrun --nnodes=1 --nproc_per_node=2 train.py --model DiT-XL/2 --global-seed 42 --data-path ~/autodl-tmp/dataset/test --pretrained-path ~/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt --results-dir ~/autodl-tmp/results --num-workers 1 --global-batch-size 32 --ckpt-every 10000 --epochs 200 > train.log 2>&1 &
+nohup torchrun --nnodes=1 --nproc_per_node=2 train.py --model DiT-XL/2 --global-seed 42 --data-path ~/autodl-tmp/dataset/test --pretrained-path ~/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt --results-dir ~/autodl-tmp/results --num-workers 1 --global-batch-size 32 --ckpt-every 60000 --epochs 200 > train.log 2>&1 &
 
 # Temp, one gpu
 nohup torchrun --nnodes=1 --nproc_per_node=1 train.py --model DiT-XL/2 --global-seed 42 --data-path ~/autodl-tmp/dataset/test --pretrained-path ~/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt --num-workers 1 --global-batch-size 16 --ckpt-every 10000 --epochs 4000 > train.log 2>&1 &
 
 # For the second model
-nohup torchrun --nnodes=1 --nproc_per_node=2 train_img.py --model DiT-XL/2 --global-seed 42 --data-path ~/autodl-tmp/dataset/dif --pretrained-path ~/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt --results-dir ~/autodl-tmp/results_2 --num-workers 2 --global-batch-size 32 --ckpt-every 15000 --epochs 100 > train.log 2>&1 &
+nohup torchrun --nnodes=1 --nproc_per_node=2 train_img.py --model DiT-XL/2 --global-seed 42 --data-path ~/autodl-tmp/dataset/dif --pretrained-path ~/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt --results-dir ~/autodl-tmp/results_2 --num-workers 2 --global-batch-size 32 --ckpt-every 30000 --epochs 200 > train.log 2>&1 &
+
+nohup torchrun --nnodes=1 --nproc_per_node=2 train_img.py --model DiT-XL/2 --global-seed 42 --data-path ~/autodl-tmp/dataset/dif --pretrained-path ~/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt --results-dir ~/autodl-tmp/results_2 --num-workers 2 --global-batch-size 32 --ckpt-every 60000 --epochs 200 > train.log 2>&1 &
+
 
 # continue
 nohup torchrun --nnodes=1 --nproc_per_node=2 train_img.py --model DiT-XL/2 --global-seed 42 --data-path ~/autodl-tmp/dataset/dif --checkpoint-path ~/autodl-tmp/results_2/001-DiT-XL-2/checkpoints/0030000.pt --results-dir ~/autodl-tmp/results_2 --num-workers 2 --global-batch-size 32 --ckpt-every 30000 --epochs 200 > train.log 2>&1 &
@@ -70,14 +73,30 @@ python sample.py --model DiT-XL/2 --seed 42 --image-size 256 --ckpt ~/autodl-tmp
 
 python sample_img.py --model DiT-XL/2 --seed 42 --image-size 256 --ckpt ~/autodl-tmp/results_2
 
+python sample_img.py --model DiT-XL/2 --seed 42 --image-size 256 --ckpt ~/autodl-tmp/results_2/002-DiT-XL-2/checkpoints/0060000.pt
+
 # Sample large
 nohup torchrun --nnodes=1 --nproc_per_node=1 sample_ddp.py --model DiT-XL/2 --image-size 256 --global-seed 42 --per-proc-batch-size 16 --sample-dir ~/autodl-tmp/samples --ckpt ~/autodl-tmp/results/000-DiT-XL-2/checkpoints/0060000.pt --num-fid-samples 100 > samples.log 2>&1 &
 
+nohup torchrun --nnodes=1 --nproc_per_node=2 sample_ddp2.py --model DiT-XL/2 --image-size 256 --global-seed 42 --per-proc-batch-size 16 --sample-dir ~/autodl-tmp/samples_pos_2 --ckpt ~/autodl-tmp/results/001-DiT-XL-2/checkpoints/0060000.pt --num-fid-samples 9469 > samples.log 2>&1 &
+
+
 nohup torchrun --nnodes=1 --nproc_per_node=1 sample_ddp2.py --model DiT-XL/2 --image-size 256 --global-seed 42 --per-proc-batch-size 1 --sample-dir ~/autodl-tmp/samples --ckpt ~/autodl-tmp/results/000-DiT-XL-2/checkpoints/0060000.pt --num-fid-samples 100 > samples.log 2>&1 &
+
+# For another one
+nohup torchrun --nnodes=1 --nproc_per_node=2 sample_ddp_img.py --model DiT-XL/2 --num-workers 2 --image-size 256 --global-seed 42 --per-proc-batch-size 1 --data-path ~/autodl-tmp/dataset/dif --sample-dir ~/autodl-tmp/samples_2 --ckpt ~/autodl-tmp/results_2/002-DiT-XL-2/checkpoints/0060000.pt --num-fid-samples 18968 > samples_2.log 2>&1 &
+
 
 # Evaluate FID
 
 python evaluator.py --reference-path ~/autodl-tmp/reference --samples-path ~/autodl-tmp/samples/DiT-XL-2-0060000-size-256-vae-ema-cfg-1.5-seed-42
 
+python evaluator.py --reference-path ~/autodl-tmp/reference --samples-path ~/autodl-tmp/samples_pos_2/DiT-XL-2-0060000-size-256-vae-ema-cfg-1.5-seed-42
+
+python evaluator.py --reference-path ~/autodl-tmp/reference_2 --samples-path ~/autodl-tmp/samples_2/DiT-XL-2-0060000-size-256-vae-ema-cfg-1.5-seed-42
+
+# Script
+python generate_reference_from_dataset.py --data-path ~/autodl-tmp/dataset/dif --dest-path ~/autodl-tmp/reference_2/
+
 # For remember the PID in linux to kill
-kill 1197
+kill 2901

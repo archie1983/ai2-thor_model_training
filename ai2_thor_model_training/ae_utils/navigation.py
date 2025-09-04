@@ -223,7 +223,7 @@ class NavigationUtils:
         while deg_to_turn_from_N >= 180: deg_to_turn_from_N = deg_to_turn_from_N - 360
         while deg_to_turn_from_N <= -180: deg_to_turn_from_N += 360
 
-        print("Tx, Ty:", Tx, Ty, " Ox, Oy, Or: ", Ox, Oy, Or, " deg_to_turn_from_current: ", deg_to_turn_from_current, " deg_to_turn_from_N: ", deg_to_turn_from_N)
+        #print("Tx, Ty:", Tx, Ty, " Ox, Oy, Or: ", Ox, Oy, Or, " deg_to_turn_from_current: ", deg_to_turn_from_current, " deg_to_turn_from_N: ", deg_to_turn_from_N)
 
         return deg_to_turn_from_current, deg_to_turn_from_N
 
@@ -279,7 +279,7 @@ class NavigationUtils:
             if euclidean_dist(destination[0], current_node.get_ai2thor_pose()) <= close_enough:
                 best_cost = cost[current_node.get_ai2thor_pose_and_rtn()]
                 (angle_req, deg_to_turn) = self.angle_to_face_target((target_point.x, target_point.y), current_node.get_xyr())
-                print("C_yaw: ", current_node.get_ai2thor_pose_and_rtn()[1][1], " angle_req: ", angle_req)
+                #print("C_yaw: ", current_node.get_ai2thor_pose_and_rtn()[1][1], " angle_req: ", angle_req)
                 angle_req = self.normalize_yaw(angle_req)
                 #print("C_yaw: ", current_node.get_ai2thor_pose_and_rtn()[1][1], " angle_req: ", angle_req)
                 # here we will store our path
@@ -379,7 +379,8 @@ class NavigationUtils:
                 all_door_targets.append({"pos": target_position,
                                          "in_same_room": is_in_same_room,
                                          "visible": door['visible'],
-                                         "distance": door_path_length})
+                                         "distance": door_path_length,
+                                         "door_obj": door})
         #print("all_door_targets: ", all_door_targets)
 
         # Ideally we want to get a door that is in the same room, but not yet visible, because we want to elicit
@@ -408,6 +409,11 @@ class NavigationUtils:
             selected_target = all_rooms_sorted_by_distance[0]
 
         if selected_target is not None:
+            door = selected_target["door_obj"]
+            print("Sel door corners: ", door["axisAlignedBoundingBox"]["cornerPoints"])
+            print("Sel door size: ", door["axisAlignedBoundingBox"]["size"])
+            print("Sel door rotation: ", door["rotation"])
+            print("Sel door isOpen: ", door["isOpen"])
             return Point(selected_target["pos"]["x"], selected_target["pos"]["z"])
         else:
             raise ValueError("No door found that can be navigated to")

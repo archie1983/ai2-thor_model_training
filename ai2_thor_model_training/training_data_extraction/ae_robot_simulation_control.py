@@ -146,11 +146,19 @@ class RobotNavigationControl:
         print(self.controller.last_event.metadata['objects'])
 
     # Execute an action passed from elsewhere. The action will be one of the following: [RotateLeft, RotateRight, MoveAhead]
-    def execute_action(self, action):
+    def execute_action(self, action, degrees = 45, moveMagnitude=0.25, adhere_to_grid = False):
         if "Rotate" in action:
-            self.controller.step(action=action, degrees=45) # if we want to rotate, then we will be rotating by 45 degrees
+            self.controller.step(action=action, degrees=degrees) # if we want to rotate, then we will be rotating by 45 degrees
         else:
-            self.controller.step(action=action, moveMagnitude=0.25) # move ahead by 25cm
+            # If we want to adhere to the grid (i.e. diagonal move changes both X and Y coordinate by 25cm)
+            # then we will need to move by the amount equal to the hypothenuse of the right angle triangle.
+            # For that we'll first need to figure out which direction we are looking.
+            (p, r) = thor_agent_pose(self.controller, as_tuple=True)
+            c_yaw = int(r[1])
+            if adhere_to_grid and c_yaw in [45, 135, 225, 315]:
+                self.controller.step(action=action, moveMagnitude=0.353553391) # move ahead by 35cm to end up at the next grid location
+            else:
+                self.controller.step(action=action, moveMagnitude=moveMagnitude) # move ahead by 25cm
 
     # Rotate left by given number of degrees degrees
     def rotate_left(self, deg):

@@ -103,7 +103,9 @@ class AI2THORUtils:
     def set_controller(self, controller):
         self.controller = controller
 
-    def visualise_path2(self, path, reachable_positions, rooms_in_habitat, start, goal):
+    def visualise_path2(self, path, reachable_positions, unreachable_postions,
+                        rooms_in_habitat, start, goal,
+                        show_reachable_pos = False, show_unreachable_pos = False):
         grid_size = self.controller.initialization_parameters["gridSize"]
 
         all_corners = [corner for room_name, corners, center in rooms_in_habitat for corner in corners]
@@ -126,36 +128,41 @@ class AI2THORUtils:
             self.path_ax.clear()
 
         # AE: Debug
-        #event = self.controller.step(action="GetReachablePositions")
-        #r_positions = event.metadata["actionReturn"]
-        #r_positions = [(pos['x'], pos['z']) for pos in r_positions]
-        #print("AE: positions: ", positions)
+        if show_reachable_pos:
+            event = self.controller.step(action="GetReachablePositions")
+            r_positions = event.metadata["actionReturn"]
+            r_positions = [(pos['x'], pos['z']) for pos in r_positions]
+            #print("AE: positions: ", positions)
 
-        #reachable_x = [pos[0] for pos in r_positions]
-        #reachable_y = [pos[1] for pos in r_positions]
-        #self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', alpha=0.5, zorder=4, label='Pstep')
+            reachable_x = [pos[0] for pos in r_positions]
+            reachable_y = [pos[1] for pos in r_positions]
+            self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', alpha=0.5, zorder=4, label='Pstep')
 
-        # Get reachable positions
-        #event = self.controller.step(action="GetReachablePositions")
-        #r_positions = event.metadata["actionReturn"]
+            #Get reachable positions
+            event = self.controller.step(action="GetReachablePositions")
+            r_positions = event.metadata["actionReturn"]
 
-        #print(f"Total reachable positions: {len(r_positions)}")
-        #print(f"Sample positions: {r_positions[:5]}")
+            print(f"Total reachable positions: {len(r_positions)}")
+            print(f"Sample positions: {r_positions[:5]}")
 
-        # Check the bounds
-        #x_coords = [pos['x'] for pos in r_positions]
-        #z_coords = [pos['z'] for pos in r_positions]
+            #Check the bounds
+            x_coords = [pos['x'] for pos in r_positions]
+            z_coords = [pos['z'] for pos in r_positions]
 
-        #print(f"X range: {min(x_coords):.3f} to {max(x_coords):.3f}")
-        #print(f"Z range: {min(z_coords):.3f} to {max(z_coords):.3f}")
+            print(f"X range: {min(x_coords):.3f} to {max(x_coords):.3f}")
+            print(f"Z range: {min(z_coords):.3f} to {max(z_coords):.3f}")
 
-        # Get current agent position for reference
-        #agent_pos = self.controller.last_event.metadata["agent"]["position"]
-        #print(f"Agent position: x={agent_pos['x']:.3f}, z={agent_pos['z']:.3f}")
+            #Get current agent position for reference
+            agent_pos = self.controller.last_event.metadata["agent"]["position"]
+            print(f"Agent position: x={agent_pos['x']:.3f}, z={agent_pos['z']:.3f}")
 
-        #for pos in reachable_positions:
-        #    print("pos: ", pos)
-        #    self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', zorder=4, label='Pstep')
+            for pos in reachable_positions:
+               print("pos: ", pos)
+               self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', zorder=4, label='Pstep')
+        if show_unreachable_pos:
+            unreachable_x = [pos[0] for pos in unreachable_postions]
+            unreachable_y = [pos[1] for pos in unreachable_postions]
+            self.path_ax.scatter(unreachable_x, unreachable_y, s=25, c='yellow', alpha=0.5, zorder=4, label='Pstep')
         # Debug done
 
         # Setting up for the top-down picture of the habitat

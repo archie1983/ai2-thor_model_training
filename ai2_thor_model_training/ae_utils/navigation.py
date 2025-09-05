@@ -63,7 +63,23 @@ class AStarNode:
     def get_ai2thor_pose_and_rtn(self):
         return ((self.x, 0.9009993672370911, self.y), (0, self.yaw, 0))
 
-class NavigationAction(Enum):
+##
+# I want to implement a "scoring circle". Imagine circular zones (1 cell wide each) around the target point.
+# The optimal A* path would usually lead through all the zones right to the target starting at the outermost
+# and ending with the innermost and then the target. Usually the path would not go back to a zone that has
+# already been visited. I say *usually* because sometimes the obstacles in the scene would require to re-visit
+# a zone that has already been visited, but for our purposes (reaching the middle of the room) such cases
+# would be relatively rare. Now, the inferred path may not be as efficient and could potentially snake back
+# to where we have already been. We want to prevent that, so we should give a reward point for reaching a new
+# zone, but a penalty for reaching a visited one.
+#
+##
+class ScoringCircle:
+    def __init__(self, center_node):
+        self.center_node = center_node
+
+
+class NavigationActions():
     '''
     Imagine the same grid that is in the comments of AStarNode class:
     .---.---.---.---.
@@ -92,89 +108,83 @@ class NavigationAction(Enum):
     if we do that, then we will end up somewhere that is between grid nodes and it will be hard to validate whether it is
     a reachable position or not. Therefore we still need to advance by 0.25 in both directions, but reflect the cost appropriately.
     '''
-    MOVE_NORTH = (0, 0.25, 0, 1) #(0, -0.25, 0)
-    MOVE_SOUTH = (0, -0.25, 180, 1) #(0, 0.25, 180)
-    MOVE_EAST = (0.25, 0, 90, 1)
-    MOVE_WEST = (-0.25, 0, 270, 1)
-    MOVE_NORTHEAST = (0.25, 0.25, 45, 1.414213562) #(0.25, -0.25, 45)
-    MOVE_NORTHWEST = (-0.25, 0.25, 315, 1.414213562) #(-0.25, -0.25, 315)
-    MOVE_SOUTHEAST = (0.25, -0.25, 135, 1.414213562) #(0.25, 0.25, 135)
-    MOVE_SOUTHWEST = (-0.25, -0.25, 225, 1.414213562) #(-0.25, 0.25, 225)
-    TURN_LEFT = (0, 0, -45, 1)
-    TURN_RIGHT = (0, 0, 45, 1)
 
-    def __init__(self, dx, dy, yaw, cost_of_move):
-        self._dx = dx
-        self._dy = dy
+    def __init__(self, step = 0.25):
+        diag_move_cost = (step ** 2 * 2) ** 0.5 / step  # 1.414213562
+        straight_move_cost = 1
+
+        self.MOVE_NORTH = self.create_move(0, step, 0, straight_move_cost)
+        self.MOVE_SOUTH = self.create_move(0, -step, 180, straight_move_cost)
+        self.MOVE_EAST = self.create_move(step, 0, 90, straight_move_cost)
+        self.MOVE_WEST = self.create_move(-step, 0, 270, straight_move_cost)
+        self.MOVE_NORTHEAST = self.create_move(step, step, 45, diag_move_cost)
+        self.MOVE_NORTHWEST = self.create_move(-step, step, 315, diag_move_cost)
+        self.MOVE_SOUTHEAST = self.create_move(step, -step, 135, diag_move_cost)
+        self.MOVE_SOUTHWEST = self.create_move(-step, -step, 225, diag_move_cost)
+        self.TURN_LEFT = self.create_move(0, 0, -45, straight_move_cost)
+        self.TURN_RIGHT = self.create_move(0, 0, 45, straight_move_cost)
+
+        self.MOVE_MOVES = [self.MOVE_NORTH,
+                           self.MOVE_SOUTH,
+                           self.MOVE_EAST,
+                           self.MOVE_WEST,
+                           self.MOVE_NORTHEAST,
+                           self.MOVE_NORTHWEST,
+                           self.MOVE_SOUTHEAST,
+                           self.MOVE_SOUTHWEST]
+        self.TURN_MOVES = [self.TURN_LEFT, self.TURN_RIGHT]
+        self.ALL_MOVES = self.MOVE_MOVES + self.TURN_MOVES
+
+    def create_move(self, dx, dy, yaw, cost_of_move):
         # The yaw is either delta_yaw (change of yaw) if it's a turning action or an absolute yaw if it is a moving action.
-        self._yaw = yaw
-        self._cost_of_move = cost_of_move
+        new_move = {
+            "dx": dx,
+            "dy": dy,
+            "yaw": yaw,
+            "cost_of_move": cost_of_move
+        }
+        return new_move
 
-    @property
-    def dx(self):
-        return self._dx
-
-    @property
-    def dy(self):
-        return self._dy
-
-    @property
-    def yaw(self):
-        return self._yaw
-
-    @classmethod
-    def valid_actions(cls, current_pose_yaw):
-        ret_set = {action for action in cls if action.yaw == current_pose_yaw}
-        ret_set.add(NavigationAction.TURN_RIGHT)
-        ret_set.add(NavigationAction.TURN_LEFT)
+    def valid_actions(self, current_pose_yaw):
+        ret_set = [action for action in self.MOVE_MOVES if action["yaw"] == current_pose_yaw]
+        ret_set += self.TURN_MOVES
         return ret_set
 
     # Apply the action to some X and Y coordinates.
     # This will allow us to test if the new X and Y is within reachable positions
-    def apply(self, x, y):
-        return x + self._dx, y + self._dy
+    def apply(self, x, y, action):
+        # this rounding is required because when we have step size=0.1, then manipulating with that quickly leads to
+        # ugly values, e.g. 0.30000000000000004
+        return round(x + action["dx"], 2), round(y + action["dy"], 2)
 
     # Apply the action to a node. This will allow us to create a new node from a previous node
     # including X and Y coordinates and also the Yaw rotation.
-    def apply_to_node(self, node, destination):
+    def apply_to_node(self, node, destination, action):
         full_pose = node.get_ai2thor_pose_and_rtn()
         # TODO: Are we updating numerical values here or the fields of the other node?
         # print("AE: full_pose[0][0]: ", full_pose[0][0], node.get_ai2thor_pose())
-        new_x = full_pose[0][0] + self._dx
-        new_y = full_pose[0][2] + self._dy
+        # this rounding is required because when we have step size=0.1, then manipulating with that quickly leads to
+        # ugly values, e.g. 0.30000000000000004
+        new_x = round(full_pose[0][0] + action["dx"], 2)
+        new_y = round(full_pose[0][2] + action["dy"], 2)
         #print("AE: full_pose: ", full_pose)
         # now that new cost has been calculated, we can assign the new yaw to the pose fields.
         # If we're turning, then yaw will change by the specified value,
         # if not, then it should be the same as before and also equal to the yaw of the specified value.
-        if self in [NavigationAction.TURN_LEFT, NavigationAction.TURN_RIGHT]:
-            new_yaw = NavigationUtils.normalize_yaw(full_pose[1][1] + self._yaw)
+        if action in self.TURN_MOVES:
+            new_yaw = NavigationUtils.normalize_yaw(full_pose[1][1] + action["yaw"])
         else:
-            new_yaw = self._yaw
+            new_yaw = action["yaw"]
             #print("AE: new_yaw == full_pose[1][1]: ", new_yaw, full_pose[1][1], self.name)
             assert(new_yaw == full_pose[1][1])
         new_full_pose = ((new_x, full_pose[0][1], new_y), (0.0, new_yaw, 0.0))
         # Cost of this move will always be as defined in the constructor, 1 - for the movement where only one coordinate
         # changes or when turning. Or 1.414 for a diagonal move.
         # Therefore the g value for the new node will be old g value + self._cost_of_move
-        new_node = AStarNode(new_full_pose, node.g + self._cost_of_move,
+        new_node = AStarNode(new_full_pose, node.g + action["cost_of_move"],
                                         euclidean_dist(new_full_pose[0], destination[0]), node)
 
         return new_node
-
-##
-# I want to implement a "scoring circle". Imagine circular zones (1 cell wide each) around the target point.
-# The optimal A* path would usually lead through all the zones right to the target starting at the outermost
-# and ending with the innermost and then the target. Usually the path would not go back to a zone that has
-# already been visited. I say *usually* because sometimes the obstacles in the scene would require to re-visit
-# a zone that has already been visited, but for our purposes (reaching the middle of the room) such cases
-# would be relatively rare. Now, the inferred path may not be as efficient and could potentially snake back
-# to where we have already been. We want to prevent that, so we should give a reward point for reaching a new
-# zone, but a penalty for reaching a visited one.
-#
-##
-class ScoringCircle:
-    def __init__(self, center_node):
-        self.center_node = center_node
 
 
 class NavigationUtils:
@@ -183,9 +193,10 @@ class NavigationUtils:
     from start point to destination.
     '''
 
-    def __init__(self):
+    def __init__(self, step = 0.25):
         # Last path generated
         self.last_path_gen = None
+        self.na = NavigationActions(step = step)
 
     def get_last_path_and_params(self):
         return (self.last_path_gen,
@@ -233,7 +244,7 @@ class NavigationUtils:
     # reachable_positions: Positions that are possible to reach (no objects are sitting in those places)
     # close_enough: how close is enough to consider target achieved
     ##
-    def get_path_cost_to_target_point(self, start_point, target_point, reachable_positions_in, close_enough = 0.5):
+    def get_path_cost_to_target_point(self, start_point, target_point, reachable_positions_in, close_enough = 0.5, step = 0.25):
         destination = ((target_point.x, 0.9009993672370911, target_point.y),
                        start_point[1])
         #print("AE: start_point: ", start_point, " target_point: ", target_point)
@@ -244,8 +255,8 @@ class NavigationUtils:
         # Also angles need to be discrete values in [0, 45, 90, 135, 180, 225, 270, 315]
         start_point = _round_pose((start_point[0], normalize_angles(start_point[1])))
         destination = _round_pose((destination[0], normalize_angles(destination[1])))
-        start_point = self.normalize_to_grid(start_point)
-        destination = self.normalize_to_grid(destination)
+        start_point = self.normalize_to_grid(start_point, step)
+        destination = self.normalize_to_grid(destination, step)
         # positions that we can reach
         reachable_positions = set(reachable_positions_in)
         # Save the search parameters in case we want to visualize the path later
@@ -296,15 +307,15 @@ class NavigationUtils:
 
             # AE: Look at all defined actions and try each of them from the current pose and see what happens
             #print("ae: current_node.get_yaw() : ", current_node.get_yaw(), " self.normalize_yaw(current_node.get_yaw()): ", self.normalize_yaw(current_node.get_yaw()))
-            for action in NavigationAction.valid_actions(self.normalize_yaw(current_node.get_yaw())):
-                nx, ny = action.apply(current_node.x, current_node.y)
+            for action in self.na.valid_actions(self.normalize_yaw(current_node.get_yaw())):
+                nx, ny = self.na.apply(current_node.x, current_node.y, action)
                 # If we end up in a legal place, then generate a new node and add it to the priority queue
                 if (nx, ny) in reachable_positions:
                     # generate a new node from this action. There may be different nodes for the same location
                     # on the grid because they may have different yaw rotations and even different parents.
                     # So in the worst case there can be a node for <each grid location> * <all possible yaw rotations> * <each grid location as a parent>
                     #print("AE: current_node: ", current_node.get_yaw(), " destination: ", destination)
-                    next_node = action.apply_to_node(current_node, destination)
+                    next_node = self.na.apply_to_node(current_node, destination, action)
                     # The new nodes cost (the g value) has already been computed when it was generated, we can add it to the
                     # cost dictionary for this position and rotation if it's not already there.
                     #
@@ -332,7 +343,7 @@ class NavigationUtils:
     ##
     # Finds the next door to navigate to given the current position
     ##
-    def find_door_target(self, current_point_and_rtn, rooms_in_habitat, reachable_positions, controller):
+    def find_door_target(self, current_point_and_rtn, rooms_in_habitat, reachable_positions, controller, close_enough = 0.5, step = 0.25):
         point_for_room_search = (current_point_and_rtn[0], "", current_point_and_rtn[1])
         cur_pos = ((current_point_and_rtn[0], 0.9009993672370911, current_point_and_rtn[1]),
                    (0.0, float(current_point_and_rtn[2]), 0.0))
@@ -369,8 +380,10 @@ class NavigationUtils:
             # the distance to that point as A* goes
             try:
                 door_path_length = self.get_path_cost_to_target_point(cur_pos,
-                                                                         target_position_point,
-                                                                         reachable_positions)
+                                                                      target_position_point,
+                                                                      reachable_positions,
+                                                                      close_enough = close_enough,
+                                                                      step = step)
             except ValueError as e:
                 door_path_length = 1000
 
@@ -397,9 +410,9 @@ class NavigationUtils:
         same_room_visible = sorted(same_room_visible, key=lambda room_tuple: room_tuple["distance"])
         all_rooms_sorted_by_distance = sorted(all_door_targets, key=lambda room_tuple: room_tuple["distance"])
 
-        # print("same_room_invisible: ", same_room_invisible)
-        # print("same_room_visible: ", same_room_visible)
-        # print("all_rooms_sorted_by_distance: ", all_rooms_sorted_by_distance)
+        #print("same_room_invisible: ", same_room_invisible)
+        #print("same_room_visible: ", same_room_visible)
+        #print("all_rooms_sorted_by_distance: ", all_rooms_sorted_by_distance)
 
         if len(same_room_invisible) > 0:
             selected_target = same_room_invisible[0]
@@ -428,7 +441,9 @@ class NavigationUtils:
                 (0.0, self.normalize_yaw(rotation[1]), 0.0))
 
     def round_to_step(self, val, step=0.25):
-        return round(val / step) * step
+        # this rounding is required because when we have step size=0.1, then manipulating with that quickly leads to
+        # ugly values, e.g. 0.30000000000000004
+        return round(round(val / step) * step, 2)
 
     @staticmethod
     def normalize_yaw(yaw):

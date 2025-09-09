@@ -132,33 +132,39 @@ class AI2THORUtils:
             event = self.controller.step(action="GetReachablePositions")
             r_positions = event.metadata["actionReturn"]
             r_positions = [(pos['x'], pos['z']) for pos in r_positions]
-            #print("AE: positions: ", positions)
+            # #print("AE: positions: ", positions)
+            #
+            # reachable_x = [pos[0] for pos in r_positions]
+            # reachable_y = [pos[1] for pos in r_positions]
+            # self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', alpha=0.5, zorder=4, label='Pstep')
+            #
+            # #Get reachable positions
+            # event = self.controller.step(action="GetReachablePositions")
+            # r_positions = event.metadata["actionReturn"]
+            #
+            # print(f"Total reachable positions: {len(r_positions)}")
+            # print(f"Sample positions: {r_positions[:5]}")
+            #
+            # #Check the bounds
+            # x_coords = [pos['x'] for pos in r_positions]
+            # z_coords = [pos['z'] for pos in r_positions]
+            #
+            # print(f"X range: {min(x_coords):.3f} to {max(x_coords):.3f}")
+            # print(f"Z range: {min(z_coords):.3f} to {max(z_coords):.3f}")
+            #
+            # #Get current agent position for reference
+            # agent_pos = self.controller.last_event.metadata["agent"]["position"]
+            # print(f"Agent position: x={agent_pos['x']:.3f}, z={agent_pos['z']:.3f}")
+            #
+            # for pos in reachable_positions:
+            #    #print("pos: ", pos)
+            #    self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', zorder=4, label='Pstep')
 
-            reachable_x = [pos[0] for pos in r_positions]
-            reachable_y = [pos[1] for pos in r_positions]
+            reachable_x = [pos[0] for pos in reachable_positions]
+            reachable_y = [pos[1] for pos in reachable_positions]
+            #reachable_x = [pos[0] for pos in r_positions]
+            #reachable_y = [pos[1] for pos in r_positions]
             self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', alpha=0.5, zorder=4, label='Pstep')
-
-            #Get reachable positions
-            event = self.controller.step(action="GetReachablePositions")
-            r_positions = event.metadata["actionReturn"]
-
-            print(f"Total reachable positions: {len(r_positions)}")
-            print(f"Sample positions: {r_positions[:5]}")
-
-            #Check the bounds
-            x_coords = [pos['x'] for pos in r_positions]
-            z_coords = [pos['z'] for pos in r_positions]
-
-            print(f"X range: {min(x_coords):.3f} to {max(x_coords):.3f}")
-            print(f"Z range: {min(z_coords):.3f} to {max(z_coords):.3f}")
-
-            #Get current agent position for reference
-            agent_pos = self.controller.last_event.metadata["agent"]["position"]
-            print(f"Agent position: x={agent_pos['x']:.3f}, z={agent_pos['z']:.3f}")
-
-            for pos in reachable_positions:
-               print("pos: ", pos)
-               self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', zorder=4, label='Pstep')
         if show_unreachable_pos:
             unreachable_x = [pos[0] for pos in unreachable_postions]
             unreachable_y = [pos[1] for pos in unreachable_postions]
@@ -205,17 +211,18 @@ class AI2THORUtils:
         zg = goal[0][2]  # z coordinate (not y!)
         self.path_ax.scatter([xg], [zg], s=100, c='green', zorder=4, label='Goal')
 
-        # Path
-        for step in path:
-            x = step[0]  # x coordinate
-            z = step[1]  # z coordinate
-            self.path_ax.scatter([x], [z], s=30, zorder=2, c="blue", alpha=0.7)
+        if path is not None:
+            # Path
+            for step in path:
+                x = step[0]  # x coordinate
+                z = step[1]  # z coordinate
+                self.path_ax.scatter([x], [z], s=30, zorder=2, c="blue", alpha=0.7)
 
-        # Optional: Draw path as connected lines
-        if len(path) > 1:
-            path_x = [step[0] for step in path]
-            path_z = [step[1] for step in path]
-            self.path_ax.plot(path_x, path_z, 'b-', alpha=0.5, linewidth=2, zorder=1)
+            # Optional: Draw path as connected lines
+            if len(path) > 1:
+                path_x = [step[0] for step in path]
+                path_z = [step[1] for step in path]
+                self.path_ax.plot(path_x, path_z, 'b-', alpha=0.5, linewidth=2, zorder=1)
 
         self.path_ax.legend()
         plt.axis('off')
@@ -363,6 +370,17 @@ def angle_to_turn_to_face_p2_from_p1(p1, p2):
     return angle_degrees
 
 ##
+# Calculates Euclidean distance between two points on a plane. If we pass 3 coordinates, then we drop the
+# middle one.
+##
+def euclidean_dist(p1, p2):
+    if len(p1) > 2:
+        p1 = (p1[0], p1[2])
+    if len(p2) > 2:
+        p2 = (p2[0], p2[2])
+    return math.sqrt(sum([(a - b)** 2 for a, b in zip(p1, p2)]))
+
+##
 # Ground truth functions - data extracted from the actual room and point is
 # tested to belong to the room polygon or not.
 ##
@@ -416,6 +434,16 @@ def get_rooms_ground_truth(house):
         rooms.append((room["roomType"], room_poly, get_centre_of_the_room(room_poly)))
 
     return rooms
+
+##
+# Return a room floor polygon for the room specifified by the id from the specified habitat
+##
+def get_room_poly_by_room_id(house, id):
+    room_poly = None
+    for room in house["rooms"]:
+        if room["id"] == "room|" + str(id):
+            room_poly = [(corner["x"], corner["z"]) for corner in room["floorPolygon"]]
+    return room_poly
 
 def is_full_house(rooms):
     existing_room_names = set()
@@ -480,6 +508,16 @@ def get_all_objects_of_type(event_or_controller, obj_type_of_interest):
 
     for obj in objects:
         if obj["objectType"] == obj_type_of_interest:
+            objects_of_type.append(obj)
+
+    return objects_of_type
+
+def get_objects_of_multiple_types(event_or_controller, obj_types_of_interest):
+    objects = get_all_objects(event_or_controller)
+    objects_of_type = []
+
+    for obj in objects:
+        if obj["objectType"] in obj_types_of_interest:
             objects_of_type.append(obj)
 
     return objects_of_type

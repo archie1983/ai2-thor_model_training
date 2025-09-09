@@ -1,7 +1,8 @@
-from thortils.utils import PriorityQueue, normalize_angles, euclidean_dist
+from thortils.utils import PriorityQueue, normalize_angles
 from thortils.navigation import _round_pose
 from enum import Enum
-from . import angle_to_turn_to_face_p2_from_p1, room_this_point_belongs_to, get_all_objects_of_type, is_point_inside_room_ground_truth
+from . import (get_room_poly_by_room_id, room_this_point_belongs_to, get_centre_of_the_room,
+               get_objects_of_multiple_types, is_point_inside_room_ground_truth, euclidean_dist)
 from shapely.geometry import Point
 import math
 
@@ -275,7 +276,7 @@ class NavigationUtils:
         # cost[n] is the cost of the cheapest path from start to n currently known, where n is the pose
         cost = {}
         # Obviously from start to start the cost is 0
-        cost[start_node.get_ai2thor_pose_and_rtn()] = 0
+        cost[start_node.get_xyr()] = 0
         # keep track of visited poses
         visited = set()
 
@@ -287,8 +288,9 @@ class NavigationUtils:
                 continue
             # AE: If we're close enough to the end, then stop exploration and work backwards to reconstruct plan or
             # estimate path cost.
+            #print("AE: destination[0], current_node.get_ai2thor_pose(): ", destination[0], current_node.get_ai2thor_pose())
             if euclidean_dist(destination[0], current_node.get_ai2thor_pose()) <= close_enough:
-                best_cost = cost[current_node.get_ai2thor_pose_and_rtn()]
+                best_cost = cost[current_node.get_xyr()]
                 (angle_req, deg_to_turn) = self.angle_to_face_target((target_point.x, target_point.y), current_node.get_xyr())
                 #print("C_yaw: ", current_node.get_ai2thor_pose_and_rtn()[1][1], " angle_req: ", angle_req)
                 angle_req = self.normalize_yaw(angle_req)
@@ -309,6 +311,7 @@ class NavigationUtils:
             #print("ae: current_node.get_yaw() : ", current_node.get_yaw(), " self.normalize_yaw(current_node.get_yaw()): ", self.normalize_yaw(current_node.get_yaw()))
             for action in self.na.valid_actions(self.normalize_yaw(current_node.get_yaw())):
                 nx, ny = self.na.apply(current_node.x, current_node.y, action)
+                #print("AE: nx, ny: ", nx, ny)
                 # If we end up in a legal place, then generate a new node and add it to the priority queue
                 if (nx, ny) in reachable_positions:
                     # generate a new node from this action. There may be different nodes for the same location
@@ -316,6 +319,7 @@ class NavigationUtils:
                     # So in the worst case there can be a node for <each grid location> * <all possible yaw rotations> * <each grid location as a parent>
                     #print("AE: current_node: ", current_node.get_yaw(), " destination: ", destination)
                     next_node = self.na.apply_to_node(current_node, destination, action)
+                    #print("AE: next_node: ", next_node.get_xyr(), " destination: ", destination)
                     # The new nodes cost (the g value) has already been computed when it was generated, we can add it to the
                     # cost dictionary for this position and rotation if it's not already there.
                     #
@@ -323,9 +327,9 @@ class NavigationUtils:
                     # If it does, then we'll get some number from cost.get(next_pose, float("inf"), otherwise we'll get
                     # infinity. If we got some number, but our new calculation is better than the old one, then we update
                     # the cost set with the new cost for the given pose.
-                    if next_node.g < cost.get(next_node.get_ai2thor_pose_and_rtn(), float("inf")):
+                    if next_node.g < cost.get(next_node.get_xyr(), float("inf")):
                         # AE: update the cost for this pose that we achieve from old pose with the selected action
-                        cost[next_node.get_ai2thor_pose_and_rtn()] = next_node.g
+                        cost[next_node.get_xyr()] = next_node.g
                         # AE: push the newly discovered pose to our priority queue, giving the priority of its cost + euclidean
                         # distance from it to the goal as a heuristic (underestimate of the cost of the rest of the path).
                         worklist.push(next_node, next_node.f)
@@ -342,8 +346,17 @@ class NavigationUtils:
 
     ##
     # Finds the next door to navigate to given the current position
+    # extend_path: A flag of whether we want to extend the path so that we go through the door.
     ##
-    def find_door_target(self, current_point_and_rtn, rooms_in_habitat, reachable_positions, controller, close_enough = 0.5, step = 0.25):
+    def find_door_target(self,
+                         current_point_and_rtn,
+                         rooms_in_habitat,
+                         reachable_positions,
+                         habitat,
+                         controller,
+                         close_enough = 0.5,
+                         step = 0.25,
+                         extend_path = True):
         point_for_room_search = (current_point_and_rtn[0], "", current_point_and_rtn[1])
         cur_pos = ((current_point_and_rtn[0], 0.9009993672370911, current_point_and_rtn[1]),
                    (0.0, float(current_point_and_rtn[2]), 0.0))
@@ -351,9 +364,10 @@ class NavigationUtils:
         # print("cur_pos: ", cur_pos, "cur_pos2: ", cur_pos2)
         # This is the room where we are
         room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
-        print(room_of_placement)
+        #print(room_of_placement)
+        #print(rooms_in_habitat)
 
-        doors = get_all_objects_of_type(controller, "Doorway")
+        doors = get_objects_of_multiple_types(controller, ["Doorway", "Doorframe"])
         # the target is not really the door, but a point in front of the door, so we will need to extract those.
         # we will also want to know if the door is visible and if it is in the same room as we are
         all_door_targets = []
@@ -366,7 +380,7 @@ class NavigationUtils:
             door_center_pos = door["axisAlignedBoundingBox"]["center"]
             #print("corners: ", door["axisAlignedBoundingBox"]["cornerPoints"])
             #print("size: ", door["axisAlignedBoundingBox"]["size"])
-            #print("rotation: ", door["rotation"])
+            #print("door_center_pos: ", door_center_pos, " rotation: ", door["rotation"])
             #print("isOpen: ", door["isOpen"])
 
             # TODO: Use angle_to_turn_to_face_p2_from_p1 from ai2_thor_utils.py and incorporate it into the
@@ -384,7 +398,80 @@ class NavigationUtils:
                                                                       reachable_positions,
                                                                       close_enough = close_enough,
                                                                       step = step)
+                if extend_path:
+                    # This is what we do now:
+                    # Retrieve the path to this door. If path length is equal or less than 1, then drop it and ignore
+                    #  it. That's likely a door that we've just gone through and is probably behind us. Then look at the
+                    #  step just before the final one in the path:
+                    #  1) Measure what room does that point belong to.
+                    #  2) Look at what two rooms does the door connect. Now we have the room that we want to get to.
+                    #  3) Look at the orientation of the door. If it's 270 or 90 degrees, then we want to change X
+                    #     coordinate. If it's 0 or 180 degrees, then we want to change Y coordinate to get to the desired
+                    #     room.
+                    #  4) Look at the centre of that room, specifically the relevant coordinate. Do we want to increase or
+                    #     decrease the relevant coordinate (X or Y)?
+                    #  5) Increase or decrease the relevant coordinate from the final point in the path. The amount to
+                    #     increase by- some small multiple of grid size, making sure that we cross over. We make sure of
+                    #     that by analysing whether the new end point for the path belongs to the required room or not.
+                    # If too close to where we are, then ignore
+                    #print("cur_pos: ", cur_pos, " target_position_point.x, target_position_point.y: ", target_position_point.x, target_position_point.y)
+                    if door_path_length <= 1 or euclidean_dist(cur_pos[0], [target_position_point.x, target_position_point.y]) <= 3 * step:
+                        raise ValueError("Door too close to start pose")
+
+                    # Let's examine the path- the last two steps to be exact.
+                    path = self.get_last_path_and_params()[0]
+                    path_last_point = path[-2]
+                    path_last_point_actual = path[-1]
+                    # what two rooms does this door connect?
+                    door_name = door["name"]
+                    (_, room1_id, room2_id) = door_name.split("|")
+                    # polygons of both rooms
+                    room1_poly = get_room_poly_by_room_id(habitat, room1_id)
+                    room2_poly = get_room_poly_by_room_id(habitat, room2_id)
+                    # Which room are we coming from and which one are we going to?
+                    if is_point_inside_room_ground_truth((path_last_point[0], "", path_last_point[1]), room1_poly):
+                        room_coming_from = room1_poly
+                        room_going_to = room2_poly
+                    elif is_point_inside_room_ground_truth((path_last_point[0], "", path_last_point[1]), room2_poly):
+                        room_coming_from = room2_poly
+                        room_going_to = room1_poly
+                    else:
+                        raise ValueError("Door linking rooms' lookup failed")
+                    # what is the door orientation?
+                    door_yaw = door["rotation"]["y"]
+                    rgc = get_centre_of_the_room(room_going_to)
+                    if int(door_yaw) in [90, 270]: ## looking east or west, so X coordinate change
+                        direction = rgc.x > path_last_point[0] # True means we're going EAST, False means we're going WEST
+                        if direction:
+                            new_point_target = Point(target_position_point.x + 0.5, target_position_point.y)
+                        else:
+                            new_point_target = Point(target_position_point.x - 0.5, target_position_point.y)
+                    elif int(door_yaw) in [0, 180, 360]: # looking south or north, so Y coordinate change
+                        direction = rgc.y > path_last_point[1]  # True means we're going NORTH, False means we're going SOUTH
+                        if direction:
+                            new_point_target = Point(target_position_point.x, target_position_point.y + 0.5)
+                        else:
+                            new_point_target = Point(target_position_point.x, target_position_point.y - 0.5)
+                    else:
+                        raise ValueError("Door in non-standard orientation")
+
+                    # new_point_target now contains a point just beyond the door centre.
+                    # update target position to reflect the new target beyond the door centre
+                    target_position = {"x": new_point_target.x, "y": door_center_pos['y'],
+                                       "z": new_point_target.y}
+
+                    door_path_length = self.get_path_cost_to_target_point(cur_pos,
+                                                                          new_point_target,
+                                                                          reachable_positions,
+                                                                          close_enough = close_enough,
+                                                                          step = step)
+
+                #room_coming_from = room_this_point_belongs_to(rooms_in_habitat, [path[-2][0], "", path[-2][1]])
+                #print("room_coming_from: ", room_coming_from)
+                #print(door)
+
             except ValueError as e:
+                print("PLANNING ERR: ", e)
                 door_path_length = 1000
 
             # Ignore doors to which path could not be planned
@@ -422,11 +509,11 @@ class NavigationUtils:
             selected_target = all_rooms_sorted_by_distance[0]
 
         if selected_target is not None:
-            door = selected_target["door_obj"]
-            print("Sel door corners: ", door["axisAlignedBoundingBox"]["cornerPoints"])
-            print("Sel door size: ", door["axisAlignedBoundingBox"]["size"])
-            print("Sel door rotation: ", door["rotation"])
-            print("Sel door isOpen: ", door["isOpen"])
+            #door = selected_target["door_obj"]
+            #print("Sel door corners: ", door["axisAlignedBoundingBox"]["cornerPoints"])
+            #print("Sel door size: ", door["axisAlignedBoundingBox"]["size"])
+            #print("Sel door rotation: ", door["rotation"])
+            #print("Sel door isOpen: ", door["isOpen"])
             return Point(selected_target["pos"]["x"], selected_target["pos"]["z"])
         else:
             raise ValueError("No door found that can be navigated to")

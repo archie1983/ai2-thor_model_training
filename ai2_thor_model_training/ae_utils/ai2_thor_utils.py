@@ -6,6 +6,7 @@ from thortils.utils.math import (euclidean_dist, to_deg)
 from thortils.agent import thor_pose_as_tuple
 from PIL import Image
 import matplotlib.pyplot as plt
+import numpy as np
 
 ##
 # My own utilities functions for AI2-THOR. I couldn't find analogous functions in Thortils,
@@ -613,6 +614,70 @@ def normalize_colors(frame):
         frame = cv2.merge([b, g, r])
 
     return frame
+
+##
+# From the max and min of the habitat coordinates we can generate full grid of the habitat.
+# Later we can infer unreachable positions from this and reachable positions.
+##
+def create_full_grid_from_room_layout(rooms_in_habitat, step = 0.25):
+    #print("AE, rooms_in_habitat: ", rooms_in_habitat)
+    room_coords = [] # here we will store coordinates of every corner of each room
+    [room_coords.extend(r[1]) for r in rooms_in_habitat]
+    zf = lambda x: zip(*x) # this will allow to turn the tuples of coordinates into two lists - X and Y coordinates lists.
+    [x_coords, y_coords] = zf(room_coords) # get the two lists
+    # get the max and min coordinates from each list
+    min_x = min(x_coords)
+    min_y = min(y_coords)
+    max_x = max(x_coords)
+    max_y = max(y_coords)
+
+    # Create the grid coordinates
+    x_coords = np.arange(min_x, max_x + step, step)
+    y_coords = np.arange(min_y, max_y + step, step)
+
+    # Create meshgrid
+    X, Y = np.meshgrid(x_coords, y_coords)
+
+    # Create list of (x, y) tuples
+    all_positions = list(zip(X.flatten(), Y.flatten()))
+    return all_positions
+
+def add_buffer_to_unreachable(reachable_points, all_grid_points, step=0.25, buffer_size=1):
+    """
+    Add buffer around unreachable positions using grid-based approach.
+
+    Parameters:
+    reachable_positions: list of (x, y) tuples from AI2-THOR
+    all_grid_points: full list of all (x, y) tuples including both reachable and unreachable
+    step: grid step size
+    buffer_size: number of grid cells to buffer (default: 1 cell = 0.25m)
+    """
+
+    # Find unreachable positions
+    unreachable = all_grid_points - reachable_points
+
+    # Add buffer around unreachable positions
+    buffered_unreachable = set(unreachable)  # Start with original unreachable
+
+    # Define neighbor directions (4-connected or 8-connected)
+    directions_4 = [(0, step), (0, -step), (step, 0), (-step, 0)]
+    directions_8 = directions_4 + [(step, step), (step, -step), (-step, step), (-step, -step)]
+
+    # Add buffer layers
+    for _ in range(buffer_size):
+        new_buffer = set()
+        for point in buffered_unreachable:
+            x, z = point
+            for dx, dz in directions_8:  # Use 8-connected for better coverage
+                neighbor = (round(x + dx, 2), round(z + dz, 2))
+                if neighbor in all_grid_points:
+                    new_buffer.add(neighbor)
+        buffered_unreachable.update(new_buffer)
+
+    # Final safe positions are all grid points minus buffered unreachable
+    safe_positions = all_grid_points - buffered_unreachable
+
+    return safe_positions, buffered_unreachable
 
 # Define actions that we have to move around the agent
 action_mapping = {

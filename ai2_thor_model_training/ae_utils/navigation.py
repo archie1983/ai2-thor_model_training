@@ -59,7 +59,7 @@ class AStarNode:
         return (self.x, self.y, self.yaw)
 
     def get_ai2thor_pose(self):
-        return (self.x, 0.9009993672370911, self.y)
+        return (self.x, 0.9009993672370911, self.y) # 0.9009993672370911 is likely robot height. This value usually never changes in AI2-Thor poses.
 
     def get_ai2thor_pose_and_rtn(self):
         return ((self.x, 0.9009993672370911, self.y), (0, self.yaw, 0))
@@ -245,7 +245,7 @@ class NavigationUtils:
     # reachable_positions: Positions that are possible to reach (no objects are sitting in those places)
     # close_enough: how close is enough to consider target achieved
     ##
-    def get_path_cost_to_target_point(self, start_point, target_point, reachable_positions_in, close_enough = 0.5, step = 0.25):
+    def get_path_cost_to_target_point(self, start_point, target_point, reachable_positions_in, close_enough = 0.5, step = 0.25, debug=False):
         destination = ((target_point.x, 0.9009993672370911, target_point.y),
                        start_point[1])
         #print("AE: start_point: ", start_point, " target_point: ", target_point)
@@ -258,6 +258,8 @@ class NavigationUtils:
         destination = _round_pose((destination[0], normalize_angles(destination[1])))
         start_point = self.normalize_to_grid(start_point, step)
         destination = self.normalize_to_grid(destination, step)
+        #if debug:
+        #    print("start_point: ", start_point, " destination: ", destination)
         # positions that we can reach
         reachable_positions = set(reachable_positions_in)
         # Save the search parameters in case we want to visualize the path later
@@ -288,7 +290,8 @@ class NavigationUtils:
                 continue
             # AE: If we're close enough to the end, then stop exploration and work backwards to reconstruct plan or
             # estimate path cost.
-            #print("AE: destination[0], current_node.get_ai2thor_pose(): ", destination[0], current_node.get_ai2thor_pose())
+            #if debug:
+            #    print("AE: destination[0], current_node.get_ai2thor_pose(): ", destination[0], current_node.get_ai2thor_pose())
             if euclidean_dist(destination[0], current_node.get_ai2thor_pose()) <= close_enough:
                 best_cost = cost[current_node.get_xyr()]
                 (angle_req, deg_to_turn) = self.angle_to_face_target((target_point.x, target_point.y), current_node.get_xyr())
@@ -311,7 +314,8 @@ class NavigationUtils:
             #print("ae: current_node.get_yaw() : ", current_node.get_yaw(), " self.normalize_yaw(current_node.get_yaw()): ", self.normalize_yaw(current_node.get_yaw()))
             for action in self.na.valid_actions(self.normalize_yaw(current_node.get_yaw())):
                 nx, ny = self.na.apply(current_node.x, current_node.y, action)
-                #print("AE: nx, ny: ", nx, ny)
+                if debug:
+                    print("AE: nx, ny: ", nx, ny, " action: ", action, " cur_yaw: ", current_node.get_yaw())
                 # If we end up in a legal place, then generate a new node and add it to the priority queue
                 if (nx, ny) in reachable_positions:
                     # generate a new node from this action. There may be different nodes for the same location
@@ -319,7 +323,8 @@ class NavigationUtils:
                     # So in the worst case there can be a node for <each grid location> * <all possible yaw rotations> * <each grid location as a parent>
                     #print("AE: current_node: ", current_node.get_yaw(), " destination: ", destination)
                     next_node = self.na.apply_to_node(current_node, destination, action)
-                    #print("AE: next_node: ", next_node.get_xyr(), " destination: ", destination)
+                    if debug:
+                        print("AE: next_node: ", next_node.get_xyr(), " destination: ", destination)
                     # The new nodes cost (the g value) has already been computed when it was generated, we can add it to the
                     # cost dictionary for this position and rotation if it's not already there.
                     #
@@ -356,7 +361,8 @@ class NavigationUtils:
                          controller,
                          close_enough = 0.5,
                          step = 0.25,
-                         extend_path = True):
+                         extend_path = True,
+                         debug=False):
         point_for_room_search = (current_point_and_rtn[0], "", current_point_and_rtn[1])
         cur_pos = ((current_point_and_rtn[0], 0.9009993672370911, current_point_and_rtn[1]),
                    (0.0, float(current_point_and_rtn[2]), 0.0))
@@ -471,7 +477,8 @@ class NavigationUtils:
                 #print(door)
 
             except ValueError as e:
-                print("PLANNING ERR: ", e)
+                if debug:
+                    print("PLANNING ERR: ", e)
                 door_path_length = 1000
 
             # Ignore doors to which path could not be planned

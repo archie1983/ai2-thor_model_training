@@ -145,8 +145,16 @@ class RobotNavigationControl:
         show_objects_table(self.controller.last_event.metadata['objects'])
         print(self.controller.last_event.metadata['objects'])
 
-    # Execute an action passed from elsewhere. The action will be one of the following: [RotateLeft, RotateRight, MoveAhead]
-    def execute_action(self, action, degrees = 45, moveMagnitude=0.25, adhere_to_grid = False):
+    ##
+    # Execute an action passed from elsewhere.
+    # action: one of the following: [RotateLeft, RotateRight, MoveAhead]
+    # degrees: number of degrees to rotate if the action involves rotation
+    # moveMagnitude: amount of movement if the action involves movement.
+    # grid_size: size of one side of each grid cell.
+    # adhere_to_grid: A flag of whether we want to adhere to the grid, i.e. if we are facing SW, SE, NW or NE, then
+    #  we want to reach the next grid knot precisely, so we have to move via a diagonal, length of which needs calculation.
+    ##
+    def execute_action(self, action, degrees = 45, moveMagnitude=0.25, grid_size = 0.25, adhere_to_grid = False):
         if "Rotate" in action:
             self.controller.step(action=action, degrees=degrees) # if we want to rotate, then we will be rotating by 45 degrees
         else:
@@ -156,9 +164,8 @@ class RobotNavigationControl:
             (p, r) = thor_agent_pose(self.controller, as_tuple=True)
             c_yaw = int(r[1])
             if adhere_to_grid and c_yaw in [45, 135, 225, 315]:
-                self.controller.step(action=action, moveMagnitude=0.353553391) # move ahead by 35cm to end up at the next grid location
-            else:
-                self.controller.step(action=action, moveMagnitude=moveMagnitude) # move ahead by 25cm
+                moveMagnitude = (grid_size ** 2 * 2) ** 0.5  # Pythagorean theorem c = sqrt(a^2 + a^2) #0.353553391
+            self.controller.step(action=action, moveMagnitude=moveMagnitude) # move ahead by either what's specified or calculated
 
     # Rotate left by given number of degrees degrees
     def rotate_left(self, deg):

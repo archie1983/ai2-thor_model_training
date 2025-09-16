@@ -388,6 +388,8 @@ class NavigationUtils:
             #print("size: ", door["axisAlignedBoundingBox"]["size"])
             #print("door_center_pos: ", door_center_pos, " rotation: ", door["rotation"])
             #print("isOpen: ", door["isOpen"])
+            # skip closed doors
+            if not door["isOpen"]: continue
 
             # TODO: Use angle_to_turn_to_face_p2_from_p1 from ai2_thor_utils.py and incorporate it into the
             # path planning so that at the end it turns to face the door.
@@ -446,6 +448,11 @@ class NavigationUtils:
                     # what is the door orientation?
                     door_yaw = door["rotation"]["y"]
                     rgc = get_centre_of_the_room(room_going_to)
+
+                    # Sometimes the room centre point is empty
+                    if rgc.is_empty:
+                        raise ValueError("Room Centre can't be calculated")
+
                     if int(door_yaw) in [90, 270]: ## looking east or west, so X coordinate change
                         direction = rgc.x > path_last_point[0] # True means we're going EAST, False means we're going WEST
                         if direction:

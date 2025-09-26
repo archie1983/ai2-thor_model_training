@@ -428,6 +428,10 @@ class NavigationUtils:
 
                     # Let's examine the path- the last two steps to be exact.
                     path = self.get_last_path_and_params()[0]
+                    if len(path) < 2: # not sure how this can happen after the check above, but it did happen. I'll investigate later
+                        print('v', sep='', end='')
+                        raise ValueError("Door too close to start pose")
+
                     path_last_point = path[-2]
                     path_last_point_actual = path[-1]
                     # what two rooms does this door connect?

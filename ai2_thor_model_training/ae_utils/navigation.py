@@ -370,6 +370,10 @@ class NavigationUtils:
         # print("cur_pos: ", cur_pos, "cur_pos2: ", cur_pos2)
         # This is the room where we are
         room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
+
+        if room_of_placement == None:
+            raise ValueError("Unable to determine room of placement")
+
         #print(room_of_placement)
         #print(rooms_in_habitat)
 

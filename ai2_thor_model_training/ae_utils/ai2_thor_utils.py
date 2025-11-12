@@ -7,6 +7,7 @@ from thortils.agent import thor_pose_as_tuple
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+import traceback
 
 ##
 # My own utilities functions for AI2-THOR. I couldn't find analogous functions in Thortils,
@@ -32,11 +33,12 @@ class AI2THORUtils:
     ##
     # Load a PROCTHOR scene specified by the habitat_id.
     ##
-    def load_proctor_habitat(self, habitat_id):
+    def load_proctor_habitat(self, habitat_id, from_set="train"):
         dataset = self.getDataSet()
         self.habitat_id = habitat_id
-        print("Loading : train[" + str(habitat_id) + "]")
-        house = dataset["train"][habitat_id]
+        print("Loading : ", from_set ,"[" + str(habitat_id) + "]")
+        #traceback.print_stack()
+        house = dataset[from_set][habitat_id]
         return house
 
     ##

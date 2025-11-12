@@ -6,6 +6,14 @@ from . import (get_room_poly_by_room_id, room_this_point_belongs_to, get_centre_
 from shapely.geometry import Point
 import math
 
+##
+# Very similar to thortils.math.roundany, but specifying the significant figures in the final value
+##
+def round_to_step(val, step=0.25):
+    # this rounding is required because when we have step size=0.1, then manipulating with that quickly leads to
+    # ugly values, e.g. 0.30000000000000004
+    return round(round(val / step) * step, 2)
+
 class AStarNode:
     '''
     Imagine a 2D grid:
@@ -111,6 +119,7 @@ class NavigationActions():
     '''
 
     def __init__(self, step = 0.25):
+        self.step = step
         diag_move_cost = (step ** 2 * 2) ** 0.5 / step  # 1.414213562
         straight_move_cost = 1
 
@@ -156,19 +165,20 @@ class NavigationActions():
     def apply(self, x, y, action):
         # this rounding is required because when we have step size=0.1, then manipulating with that quickly leads to
         # ugly values, e.g. 0.30000000000000004
-        return round(x + action["dx"], 2), round(y + action["dy"], 2)
+        return round_to_step(x + action["dx"], self.step), round_to_step(y + action["dy"], self.step)
 
     # Apply the action to a node. This will allow us to create a new node from a previous node
     # including X and Y coordinates and also the Yaw rotation.
-    def apply_to_node(self, node, destination, action):
+    def apply_to_node(self, node, destination, action, debug=False):
         full_pose = node.get_ai2thor_pose_and_rtn()
         # TODO: Are we updating numerical values here or the fields of the other node?
         # print("AE: full_pose[0][0]: ", full_pose[0][0], node.get_ai2thor_pose())
         # this rounding is required because when we have step size=0.1, then manipulating with that quickly leads to
         # ugly values, e.g. 0.30000000000000004
-        new_x = round(full_pose[0][0] + action["dx"], 2)
-        new_y = round(full_pose[0][2] + action["dy"], 2)
-        #print("AE: full_pose: ", full_pose)
+        new_x = round_to_step(full_pose[0][0] + action["dx"], self.step)
+        new_y = round_to_step(full_pose[0][2] + action["dy"], self.step)
+        if debug:
+            print("AE: full_pose: ", full_pose, " action: ", action)
         # now that new cost has been calculated, we can assign the new yaw to the pose fields.
         # If we're turning, then yaw will change by the specified value,
         # if not, then it should be the same as before and also equal to the yaw of the specified value.
@@ -179,6 +189,8 @@ class NavigationActions():
             #print("AE: new_yaw == full_pose[1][1]: ", new_yaw, full_pose[1][1], self.name)
             assert(new_yaw == full_pose[1][1])
         new_full_pose = ((new_x, full_pose[0][1], new_y), (0.0, new_yaw, 0.0))
+        if debug:
+            print("AE: new_full_pose: ", new_full_pose)
         # Cost of this move will always be as defined in the constructor, 1 - for the movement where only one coordinate
         # changes or when turning. Or 1.414 for a diagonal move.
         # Therefore the g value for the new node will be old g value + self._cost_of_move
@@ -254,10 +266,13 @@ class NavigationUtils:
         # Also, round the poses so that we don't have irrational numbers in them that would be hard to look up
         # e.g. (10.75, 8.25) instead of (10.86666666, 8.3333333333).
         # Also angles need to be discrete values in [0, 45, 90, 135, 180, 225, 270, 315]
+        # Also angles need to be discrete values in [0, 45, 90, 135, 180, 225, 270, 315]
         start_point = _round_pose((start_point[0], normalize_angles(start_point[1])))
         destination = _round_pose((destination[0], normalize_angles(destination[1])))
         start_point = self.normalize_to_grid(start_point, step)
         destination = self.normalize_to_grid(destination, step)
+        if debug:
+            debug = 100
         #if debug:
         #    print("start_point: ", start_point, " destination: ", destination)
         # positions that we can reach
@@ -282,6 +297,7 @@ class NavigationUtils:
         # keep track of visited poses
         visited = set()
 
+        #print("RP: ", self.reachable_positions)
         # AE: Start the A* exploration. Obviously at first we will have the start node there with the estimate to the goal.
         while not worklist.isEmpty():
             current_node = worklist.pop()
@@ -315,16 +331,18 @@ class NavigationUtils:
             for action in self.na.valid_actions(self.normalize_yaw(current_node.get_yaw())):
                 nx, ny = self.na.apply(current_node.x, current_node.y, action)
                 if debug:
-                    print("AE: nx, ny: ", nx, ny, " action: ", action, " cur_yaw: ", current_node.get_yaw())
+                    print("AE: nx, ny: ", nx, ny, " action: ", action, " cur_yaw: ", self.normalize_yaw(current_node.get_yaw()))
+                    debug -= 1
                 # If we end up in a legal place, then generate a new node and add it to the priority queue
                 if (nx, ny) in reachable_positions:
                     # generate a new node from this action. There may be different nodes for the same location
                     # on the grid because they may have different yaw rotations and even different parents.
                     # So in the worst case there can be a node for <each grid location> * <all possible yaw rotations> * <each grid location as a parent>
                     #print("AE: current_node: ", current_node.get_yaw(), " destination: ", destination)
-                    next_node = self.na.apply_to_node(current_node, destination, action)
+                    next_node = self.na.apply_to_node(current_node, destination, action, debug)
                     if debug:
                         print("AE: next_node: ", next_node.get_xyr(), " destination: ", destination)
+                        debug -= 1
                     # The new nodes cost (the g value) has already been computed when it was generated, we can add it to the
                     # cost dictionary for this position and rotation if it's not already there.
                     #
@@ -542,13 +560,8 @@ class NavigationUtils:
     def normalize_to_grid(self, pose, step=0.25):
         location = pose[0]
         rotation = pose[1]
-        return ((self.round_to_step(location[0], step), self.round_to_step(location[1], step), self.round_to_step(location[2], step)),
+        return ((round_to_step(location[0], step), round_to_step(location[1], step), round_to_step(location[2], step)),
                 (0.0, self.normalize_yaw(rotation[1]), 0.0))
-
-    def round_to_step(self, val, step=0.25):
-        # this rounding is required because when we have step size=0.1, then manipulating with that quickly leads to
-        # ugly values, e.g. 0.30000000000000004
-        return round(round(val / step) * step, 2)
 
     @staticmethod
     def normalize_yaw(yaw):

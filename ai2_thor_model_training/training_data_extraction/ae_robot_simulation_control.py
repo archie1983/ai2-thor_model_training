@@ -23,7 +23,7 @@ from thortils import thor_teleport2d
 from thortils.controller import _resolve
 from thortils.agent import thor_agent_pose, thor_pose_as_tuple
 
-from ai2_thor_model_training.ae_utils import (get_path_length, convert_pose_set2tuple, normalize_colors)
+from ai2_thor_model_training.ae_utils import (get_path_length, convert_pose_set2tuple, normalize_colors, NavigationUtils)
 
 # Class for controlling robot navigation. This is where we will have all the navigation commands.
 # This has NOT yet got the LLM connected, but merely a set of tools to move the robot and to interact
@@ -162,10 +162,11 @@ class RobotNavigationControl:
             # then we will need to move by the amount equal to the hypothenuse of the right angle triangle.
             # For that we'll first need to figure out which direction we are looking.
             (p, r) = thor_agent_pose(self.controller, as_tuple=True)
-            c_yaw = int(r[1])
+            c_yaw = NavigationUtils.normalize_yaw(r[1])
             if adhere_to_grid and c_yaw in [45, 135, 225, 315]:
                 moveMagnitude = (grid_size ** 2 * 2) ** 0.5  # Pythagorean theorem c = sqrt(a^2 + a^2) #0.353553391
             self.controller.step(action=action, moveMagnitude=moveMagnitude) # move ahead by either what's specified or calculated
+            #print("AE: Real move mag: ", moveMagnitude, adhere_to_grid, c_yaw, (p, r))
 
     # Rotate left by given number of degrees degrees
     def rotate_left(self, deg):

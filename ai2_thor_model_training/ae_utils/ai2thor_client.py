@@ -99,7 +99,8 @@ def run_client():
 			print(f"-> Action Success: {metadata.get('success')}")
 
 			# Use OpenCV to display the received frame
-			cv2.imshow("AI2-THOR Remote View (Jetson)", frame)
+			#cv2.imshow("AI2-THOR Remote View (Jetson)", frame)
+			print(len(np_array))
 			# Wait for 1 millisecond and check for 'q' to quit
 			if cv2.waitKey(1) & 0xFF == ord('q'):
 				break

@@ -3,13 +3,12 @@ import random
 from IPython import get_ipython
 from . import NavigationTrainingDataManagement
 
-from thortils import (launch_controller,
-                      convert_scene_to_grid_map, proper_convert_scene_to_grid_map, proper_convert_scene_to_grid_map_and_poses)
+from thortils.scene import (convert_scene_to_grid_map, proper_convert_scene_to_grid_map, proper_convert_scene_to_grid_map_and_poses)
 
 from thortils.navigation import get_shortest_path_to_object_type, get_shortest_path_to_object
 from thortils.agent import thor_reachable_positions, thor_agent_position, thor_agent_pose
 from thortils.utils import roundany
-from thortils.controller import _resolve
+from thortils.controller import _resolve, launch_controller
 from thortils.object import thor_closest_object_of_type, thor_visible_objects
 from . import RobotNavigationControl
 from thortils.scene import ThorSceneInfo

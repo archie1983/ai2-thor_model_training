@@ -64,23 +64,23 @@ class AI2ThorClient:
 
 				# Display results on the Jetson
 				print(f"-> Action Success: {metadata.get('success')}")
+				print(len(np_array))
 
 				# Use OpenCV to display the received frame
-				cv2.imshow("AI2-THOR Remote View (Jetson)", frame)
+				#cv2.imshow("AI2-THOR Remote View (Jetson)", frame)
 				# Wait for 1 millisecond and check for 'q' to quit
-				if cv2.waitKey(1) & 0xFF == ord('q'):
-					break
+				#if cv2.waitKey(1) & 0xFF == ord('q'):
+				#	break
 
 			# Example of how to access other data:
 			# print(f"Agent Position: {metadata['agent']['position']}")
-
 		except ConnectionRefusedError:
 			print(f"❌ Connection Refused. Ensure server is running at {self.server_ip}:{self.port} and firewall is open.")
 		except Exception as e:
 			print(f"An error occurred: {e}")
 		finally:
 			client_socket.close()
-			cv2.destroyAllWindows()
+			#cv2.destroyAllWindows()
 			print("Client disconnected.")
 
 

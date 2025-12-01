@@ -12,6 +12,10 @@ class AI2ThorClient:
 		self.port = port
 		self.encoding = encoding
 
+		self.reachable_positions = None
+		self.unreachable_postions = None
+		self.full_grid = None
+
 	def run_client(self):
 		client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -32,6 +36,11 @@ class AI2ThorClient:
 			init_response = json.loads(init_response_bytes.decode(self.encoding))
 			if init_response.get("status") == "READY":
 				print(f"Server initialized scene: {init_response.get('scene')}")
+				self.reachable_positions = init_response.get("reachable_positions")
+				self.unreachable_postions = init_response.get("unreachable_postions")
+				self.full_grid = init_response.get("full_grid")
+
+				print("self.reachable_positions: ", self.reachable_positions)
 			else:
 				raise Exception("Server reported initialization failure.")
 

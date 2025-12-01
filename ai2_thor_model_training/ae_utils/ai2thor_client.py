@@ -86,6 +86,6 @@ class AI2ThorClient:
 
 if __name__ == "__main__":
 	# Ensure you have the OpenCV window for displaying the frame
-	atc = AI2ThorClient()
+	atc = AI2ThorClient(server_ip = '192.168.0.32')
 	print("Press 'q' in the display window to quit.")
 	atc.run_client()

@@ -21,7 +21,7 @@ class AI2ThorClient:
 			print("✅ Connected to server.")
 
 			# 1. SEND INITIAL COMMAND
-			initial_command = {"command": "INIT", "scene": "FloorPlan1"}
+			initial_command = {"command": "INIT", "hab_id": "83", "hab_set": "test"}
 			send_data(client_socket, json.dumps(initial_command).encode(self.encoding))
 
 			# Await READY response

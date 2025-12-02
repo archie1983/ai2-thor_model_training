@@ -46,10 +46,10 @@ class AI2ThorClient:
 
 			# 2. MAIN ACTION LOOP
 			action_sequence = [
-				{"command": "ACT", "action": 0, "reset": False},
-				{"command": "ACT", "action": 1, "reset": False},
-				{"command": "ACT", "action": 0, "reset": False},
-				{"command": "ACT", "action": 2, "reset": False}
+				{"command": "ACT", "action_bits": {"action": 0, "reset": False}},
+				{"command": "ACT", "action_bits": {"action": 1, "reset": False}},
+				{"command": "ACT", "action_bits": {"action": 0, "reset": False}},
+				{"command": "ACT", "action_bits": {"action": 2, "reset": False}}
 			]
 
 			for i, action_dict in enumerate(action_sequence):

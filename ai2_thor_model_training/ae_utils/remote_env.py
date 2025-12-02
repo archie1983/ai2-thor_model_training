@@ -30,6 +30,7 @@ class RemoteEnv:
 		self.choose_habitats_randomly_or_sequentially = False
 		self.controller = None
 		self.nu = NavigationUtils(step=self.grid_size)
+		self.env_retired = False
 
 	def load_random_habitat(self):
 		# print("LRH1")
@@ -390,7 +391,8 @@ class RemoteEnv:
 		send_data(conn, json.dumps(response).encode(self.encoding))
 
 	def execute_action(self, conn, command):
-		action_from_dreamer = command.get('action', 'NO_ACTION')
+		#breakpoint()
+		action_from_dreamer = command.get('action_bits', {"action": -1, "reset": True})
 		print(f"-> Received action: {action_from_dreamer}")
 
 		# Execute action
@@ -542,26 +544,24 @@ class RemoteEnv:
 		print(f"✅ Connection established with {addr}")
 
 		# keep reading commands from client and do what it wants
-		while True:
-			try:
+
+		try:
+			while True:
 				cmd_data_bytes = recv_data(conn)
 				if not cmd_data_bytes:
 					raise Exception("Client closed connection.")
-
 				command = json.loads(cmd_data_bytes.decode(self.encoding))
-
 				# here we handle what the client wants exactly
 				if command.get("command") == "INIT":
 					self.initialize_connection(conn, command)
 				elif command.get("command") == "ACT":
 					self.execute_action(conn, command)
-
-			except Exception as e:
-				print(f"Error handling client {addr}: {e}")
-			finally:
-				self.close()
-				conn.close()
-				print(f"Connection with {addr} closed.")
+		except Exception as e:
+			print(f"Error handling client {addr}: {e}")
+		finally:
+			self.close()
+			conn.close()
+			print(f"Connection with {addr} closed.")
 
 	def start_server(self):
 		server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

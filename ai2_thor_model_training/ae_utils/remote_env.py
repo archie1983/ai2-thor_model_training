@@ -19,7 +19,7 @@ from thortils.utils.math import sep_spatial_sample
 class RemoteEnv:
 	hab_exploration_stats_collection = []
 	LOCK = threading.Lock()
-	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8', conn = None): # Listen on all available network interfaces by default
+	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8', conn = None, hab_space=(100, 600)): # Listen on all available network interfaces by default
 		self.host = host
 		self.port = port
 		self.encoding = encoding
@@ -54,6 +54,11 @@ class RemoteEnv:
 		self.steps_in_new_room = 0  # how many steps have we made inside the new room since we first stepped into the target room (resets if we leave target room)
 		self.env_retired = False  # in some cases we want to be able to signal to driver.py that this env does not need driving anymore. This will help with that.
 		self.prev_obs = None
+
+		# upon beginning we don't have any habitat loaded yet, but we will check this variable to determine if we have
+		self.habitat_id = None
+		self.explored_placements_in_current_habitat = []
+		(self.hab_min, self.hab_max) = hab_space
 
 		# Dreamer stuff
 		self.isFirst = False
@@ -427,15 +432,16 @@ class RemoteEnv:
 
 		# Initialize AI2-THOR controller on the server
 		print(f"Initializing AI2-THOR for scene: {self.hab_set}[{hab_id}]...")
-		self.load_habitat(hab_id)
+		#self.load_habitat(hab_id)
 		print("AI2-THOR initialized. Ready for actions.")
 
 		# Send initial READY response
 		response = {"status": "READY",
 					"scene": self.hab_set + "[" + str(hab_id) + "]",
-					"reachable_positions": self.reachable_positions,
-					"unreachable_postions": list(self.unreachable_postions),
-					"full_grid": self.full_grid}
+					#"reachable_positions": self.reachable_positions,
+					#"unreachable_postions": list(self.unreachable_postions),
+					#"full_grid": self.full_grid
+					}
 		send_data(conn, json.dumps(response).encode(self.encoding))
 
 	def execute_action(self, conn, command):
@@ -586,7 +592,7 @@ class RemoteEnv:
 		print(f"✅ Connection established with {addr}")
 
 		# keep reading commands from client and do what it wants
-
+		breakpoint()
 		try:
 			while self.need_to_run:
 				cmd_data_bytes = recv_data(conn)

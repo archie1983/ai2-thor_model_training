@@ -433,6 +433,7 @@ class RemoteEnv:
 		frame_bytes = buffer.tobytes()
 		# now nullify the current ndarray of picture data, because we don't want to send it with json data
 		cur_obs["pov"] = []
+		print(cur_obs)
 		send_data(conn, json.dumps(cur_obs).encode(self.encoding))
 		# now send jpeg data
 		send_data(conn, frame_bytes)
@@ -471,7 +472,7 @@ class RemoteEnv:
 					"steps_used": self.step_count_in_current_episode,
 					"habitat_id": self.habitat_id,
 					"bad_spot": self._bad_spot,
-					"have_arrived": str(self.have_we_arrived(self.reward_close_enough)),
+					"have_arrived": str(bool(self.have_we_arrived(self.reward_close_enough))),
 					"path_start": self.path_start,
 					"path_dest": self.path_dest,
 					"astar_path": self.astar_path,
@@ -495,7 +496,7 @@ class RemoteEnv:
 			try:
 				self.distance_left, self.room_type, cur_pos_xy = self.get_current_path_and_pose_state()
 				self.travelled_path.append(cur_pos_xy)
-				self._done = self.have_we_arrived(self.reward_close_enough)
+				self._done = bool(self.have_we_arrived(self.reward_close_enough))
 			except ValueError as e:
 				self.distance_left = np.float32(0.0)
 				self._bad_spot = True
@@ -535,15 +536,15 @@ class RemoteEnv:
 		obs = dict(
 			reward=0.0,
 			pov=self._current_image,
-			is_first=np.bool(self.isFirst),
-			is_last=np.bool(self._done),
-			is_terminal=np.bool(self._done),
+			is_first=self.isFirst,
+			is_last=self._done,
+			is_terminal=self._done,
 			# distance_left = np.float32(self.distance_left),
 			# steps_after_room_change = np.float32(self.steps_in_new_room),
 			# room_type = np.float32(self.room_type),
-			distanceleft=np.float32(self.distance_left),
-			stepsafterroomchange=np.float32(self.steps_in_new_room),
-			roomtype=np.float32(self.room_type),
+			distanceleft=float(self.distance_left),
+			stepsafterroomchange=int(self.steps_in_new_room),
+			roomtype=int(self.room_type),
 		)
 		if self._done:
 			print('D', sep='', end='')

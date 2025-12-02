@@ -19,10 +19,11 @@ from thortils.utils.math import sep_spatial_sample
 class RemoteEnv:
 	hab_exploration_stats_collection = []
 	LOCK = threading.Lock()
-	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8'): # Listen on all available network interfaces by default
+	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8', conn = None): # Listen on all available network interfaces by default
 		self.host = host
 		self.port = port
 		self.encoding = encoding
+		self.conn = conn
 		self.atu = AI2THORUtils()
 		self.rnc = RobotNavigationControl()
 		self.grid_size = 0.125 # how fine do we want the 2D grid to be.
@@ -362,6 +363,25 @@ class RemoteEnv:
 			# print("CH2")
 			path_planned = True
 
+			self.send_habitat_and_pos_data(cur_pos)
+
+	def send_habitat_and_pos_data(self, cur_pos):
+		# Send initial READY response
+		response = {"msg": "HAB_AND_POS",
+					"hab_set": self.hab_set,
+					"hab_id": self.habitat_id,
+					"cur_pos": cur_pos,
+					"current_target_point": self.current_target_point,
+					"initial_path_length": self.initial_path_length,
+					"astar_path": self.astar_path,
+					"path_start": self.path_start,
+					"path_dest": self.path_dest,
+					"starting_room": self.starting_room,
+					"current_path_length": self.current_path_length,
+					"best_path_length": self.best_path_length
+					}
+		send_data(self.conn, json.dumps(response).encode(self.encoding))
+
 	# Determines if we have little enough left to call it an achieved goal
 	def have_we_arrived(self, epsilon=0.0):
 		pass
@@ -438,24 +458,6 @@ class RemoteEnv:
 		send_data(conn, json.dumps(cur_obs).encode(self.encoding))
 		# now send jpeg data
 		send_data(conn, frame_bytes)
-
-		## --- PROCESS AND SEND BACK ---
-		## TODO: Make sure that the converted image to JPEG here is the same that we get when we unpack
-		## before feeding it to Dreamer
-		## a) Prepare Metadata
-		#metadata = event.metadata
-		#metadata['success'] = event.metadata['lastActionSuccess']
-		## b) Prepare Frame (Convert numpy array to JPEG bytes)
-		## Use CV2 to encode the numpy array as JPEG for efficient transfer
-		#is_success, buffer = cv2.imencode(".jpg", event.frame)
-		#if not is_success:
-		#	raise Exception("Failed to encode frame to JPEG.")
-		#frame_bytes = buffer.tobytes()
-		## c) Combine and send (JSON metadata first, then image)
-		## Send metadata
-		#send_data(conn, json.dumps(metadata).encode(self.encoding))
-		## Send image data
-		#send_data(conn, frame_bytes)
 
 	def step(self, action):
 		# If this env has been retired (in evaluation mode we have evaluated everything already), then
@@ -596,14 +598,14 @@ class RemoteEnv:
 					self.initialize_connection(conn, command)
 				elif command.get("command") == "ACT":
 					self.execute_action(conn, command)
+				elif command.get("command") == "NEXT_POINT":
+					self.load_next_start_point()
 		except Exception as e:
 			print(f"Error handling client {addr}: {e}")
 		finally:
 			self.close()
 			conn.close()
 			print(f"Connection with {addr} closed.")
-
-
 
 class ServerSocketMaster():
 	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8', env_type = "RoomCentreFinder"):
@@ -624,9 +626,9 @@ class ServerSocketMaster():
 				conn, addr = server_socket.accept()
 				# Handle client connection in a new thread
 				if self.env_type == "RoomCentreFinder":
-					env = RoomCentreFinder(self.host, self.port, self.encoding)
+					env = RoomCentreFinder(self.host, self.port, self.encoding, conn)
 				else:
-					env = DoorFinder(self.host, self.port, self.encoding)
+					env = DoorFinder(self.host, self.port, self.encoding, conn)
 				self.running_envs.append(env)
 				client_thread = threading.Thread(target=env.handle_client, args=(conn, addr))
 				client_thread.start()

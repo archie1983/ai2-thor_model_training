@@ -25,12 +25,39 @@ class RemoteEnv:
 		self.encoding = encoding
 		self.atu = AI2THORUtils()
 		self.rnc = RobotNavigationControl()
-		self.grid_size = 0.125
-		self.plan_close_enough = 0.25
+		self.grid_size = 0.125 # how fine do we want the 2D grid to be.
+		self.plan_close_enough = 0.25 # how close to the target is close enough for the purposes of path planning. We may end up planning path to a point anywhere near the actual target by this much
+		self.reward_close_enough = 0.25  # how close to the target is close enough for the purposes of reward. If we're this close or closer in simulation to the target, then consider it done
+
 		self.choose_habitats_randomly_or_sequentially = False
 		self.controller = None
 		self.nu = NavigationUtils(step=self.grid_size)
-		self.env_retired = False
+
+		# When we store the statistics of each test run, we will want to capture these variables
+		self.astar_path = []
+		self.path_start = None
+		self.path_dest = None
+		self.travelled_path = []
+		self.chosen_actions = []
+
+		self._bad_spot = False
+		self._bad_spot_cnt = 0
+		self._total_reward_for_this_run = 0
+		self.step_count_in_current_episode = 0
+		self.step_count_since_start = 0
+		self.distance_left = np.float32(0.0)
+		self.room_type = -1  # current room type
+		self.starting_room = None  # which room we end up in when we spawn
+		self.target_room = None  # which room we want to end up in
+		self.current_room = None  # which room are we in now
+		self.steps_in_new_room = 0  # how many steps have we made inside the new room since we first stepped into the target room (resets if we leave target room)
+		self.env_retired = False  # in some cases we want to be able to signal to driver.py that this env does not need driving anymore. This will help with that.
+		self.prev_obs = None
+
+		# Dreamer stuff
+		self.isFirst = False
+		self._step = 0
+
 
 	def load_random_habitat(self):
 		# print("LRH1")
@@ -397,7 +424,18 @@ class RemoteEnv:
 
 		# Execute action
 		cur_obs = self.step(action_from_dreamer)
+
+		# Prepare Frame (Convert numpy array to JPEG bytes)
+		# Use CV2 to encode the numpy array as JPEG for efficient transfer
+		is_success, buffer = cv2.imencode(".jpg", cur_obs["pov"])
+		if not is_success:
+			raise Exception("Failed to encode frame to JPEG.")
+		frame_bytes = buffer.tobytes()
+		# now nullify the current ndarray of picture data, because we don't want to send it with json data
+		cur_obs["pov"] = []
 		send_data(conn, json.dumps(cur_obs).encode(self.encoding))
+		# now send jpeg data
+		send_data(conn, frame_bytes)
 
 		## --- PROCESS AND SEND BACK ---
 		## TODO: Make sure that the converted image to JPEG here is the same that we get when we unpack

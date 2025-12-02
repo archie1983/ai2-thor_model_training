@@ -72,7 +72,7 @@ class AI2ThorClient:
 				frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
 
 				# Display results on the Jetson
-				print(f"-> Action distanceleft: {metadata.get('distanceleft')}")
+				print(f"-> Action metadata: {metadata}")
 				print(len(np_array))
 
 				# Use OpenCV to display the received frame

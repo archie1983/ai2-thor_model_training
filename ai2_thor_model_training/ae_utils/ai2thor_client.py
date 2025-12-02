@@ -40,16 +40,16 @@ class AI2ThorClient:
 				self.unreachable_postions = init_response.get("unreachable_postions")
 				self.full_grid = init_response.get("full_grid")
 
-				print("self.reachable_positions: ", self.reachable_positions)
+				#print("self.reachable_positions: ", self.reachable_positions)
 			else:
 				raise Exception("Server reported initialization failure.")
 
 			# 2. MAIN ACTION LOOP
 			action_sequence = [
-				{"action": "MoveAhead"},
-				{"action": "RotateRight"},
-				{"action": "MoveAhead"},
-				{"action": "MoveRight", "moveMagnitude": 0.5}
+				{"command": "ACT", "action": 0, "reset": False},
+				{"command": "ACT", "action": 1, "reset": False},
+				{"command": "ACT", "action": 0, "reset": False},
+				{"command": "ACT", "action": 2, "reset": False}
 			]
 
 			for i, action_dict in enumerate(action_sequence):
@@ -72,7 +72,7 @@ class AI2ThorClient:
 				frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
 
 				# Display results on the Jetson
-				print(f"-> Action Success: {metadata.get('success')}")
+				print(f"-> Action distanceleft: {metadata.get('distanceleft')}")
 				print(len(np_array))
 
 				# Use OpenCV to display the received frame

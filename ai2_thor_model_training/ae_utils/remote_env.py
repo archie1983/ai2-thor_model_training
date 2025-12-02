@@ -58,6 +58,7 @@ class RemoteEnv:
 		self.isFirst = False
 		self._step = 0
 
+		self.need_to_run = True
 
 	def load_random_habitat(self):
 		# print("LRH1")
@@ -585,7 +586,7 @@ class RemoteEnv:
 		# keep reading commands from client and do what it wants
 
 		try:
-			while True:
+			while self.need_to_run:
 				cmd_data_bytes = recv_data(conn)
 				if not cmd_data_bytes:
 					raise Exception("Client closed connection.")
@@ -602,6 +603,16 @@ class RemoteEnv:
 			conn.close()
 			print(f"Connection with {addr} closed.")
 
+
+
+class ServerSocketMaster():
+	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8', env_type = "RoomCentreFinder"):
+		self.host = host
+		self.port = port
+		self.encoding = encoding
+		self.env_type = env_type
+		self.running_envs = []
+
 	def start_server(self):
 		server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
@@ -612,7 +623,12 @@ class RemoteEnv:
 			while True:
 				conn, addr = server_socket.accept()
 				# Handle client connection in a new thread
-				client_thread = threading.Thread(target=self.handle_client, args=(conn, addr))
+				if self.env_type == "RoomCentreFinder":
+					env = RoomCentreFinder(self.host, self.port, self.encoding)
+				else:
+					env = DoorFinder(self.host, self.port, self.encoding)
+				self.running_envs.append(env)
+				client_thread = threading.Thread(target=env.handle_client, args=(conn, addr))
 				client_thread.start()
 
 		except socket.error as e:
@@ -620,6 +636,8 @@ class RemoteEnv:
 			print("Ensure the port is not in use and firewall is open (as discussed previously).")
 		finally:
 			server_socket.close()
+			for env in self.running_envs:
+				env.need_to_run = False
 
 ##
 # Room centre finding task
@@ -715,5 +733,5 @@ class DoorFinder(RemoteEnv):
         return (self.current_path_length <= epsilon or self.steps_in_new_room >= 3)
 
 if __name__ == "__main__":
-	rcf = RoomCentreFinder()
-	rcf.start_server()
+	ssm = ServerSocketMaster(env_type = "RoomCentreFinder")
+	ssm.start_server()

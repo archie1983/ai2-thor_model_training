@@ -15,15 +15,28 @@ from thortils import launch_controller
 from thortils.agent import thor_reachable_positions
 from thortils.utils import roundany, getch
 from thortils.utils.math import sep_spatial_sample
+from enum import Enum
 
 class RemoteEnv:
 	hab_exploration_stats_collection = []
 	LOCK = threading.Lock()
-	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8', conn = None, hab_space=(100, 600)): # Listen on all available network interfaces by default
-		self.host = host
-		self.port = port
+
+	# Define an enum to help specify how to handle habitat position data after we load a new habitat,
+	# because sometimes we want to send the latest data, but sometimes we want to only store it to send
+	# out later.
+	class WhatToDoWithHabPosData(Enum):
+		SEND_FRESH = "send fresh"
+		SEND_STORED = "send stored"
+		STORE = "store"
+
+	def __init__(self,
+				 encoding = 'utf-8',
+				 conn = None,
+				 hab_space=(100, 600),
+				 hab_set="test"):
 		self.encoding = encoding
 		self.conn = conn
+		self.hab_set = hab_set
 		self.atu = AI2THORUtils()
 		self.rnc = RobotNavigationControl()
 		self.grid_size = 0.125 # how fine do we want the 2D grid to be.
@@ -65,8 +78,9 @@ class RemoteEnv:
 		self._step = 0
 
 		self.need_to_run = True
+		self.stored_hab_and_pos = None
 
-	def load_random_habitat(self):
+	def load_random_habitat(self, how_to_handle_hab_pos_data: 'RemoteEnv.WhatToDoWithHabPosData' = WhatToDoWithHabPosData.SEND_FRESH):
 		# print("LRH1")
 		# choose a random habitat from a space of given habitats by self.hab_max and self.hab_min
 		loaded = False
@@ -106,7 +120,7 @@ class RemoteEnv:
 
 				# load_habitat will also call self.choose_random_placement_in_habitat(), which will in turn calculate
 				# current distance cost to the target
-				self.load_habitat(self.habitat_id)
+				self.load_habitat(self.habitat_id, how_to_handle_hab_pos_data)
 				# enfore at least 2 rooms in a habitat
 				if len(self.rooms_in_habitat) >= 2:
 					loaded = True
@@ -121,23 +135,23 @@ class RemoteEnv:
 	# places in the given habitat, then we want to load a new habitat. This is all best handled in one place-
 	# this function.
 	##
-	def load_next_start_point(self):
+	def load_next_start_point(self, how_to_handle_hab_pos_data: 'RemoteEnv.WhatToDoWithHabPosData' = WhatToDoWithHabPosData.SEND_FRESH):
 		# print("L1")
 		# if nothing has been loaded, then we just load a brand new habitat - Simple
 		if self.habitat_id is None:
-			self.load_random_habitat()
+			self.load_random_habitat(how_to_handle_hab_pos_data)
 		else:
 			# otherwise, we want to look at what have we explored and what is available
 			# if we have already explored 20 random locations in this habitat, then it's time to move on
 			if len(self.explored_placements_in_current_habitat) > self.places_per_hab:
-				self.load_random_habitat()
+				self.load_random_habitat(how_to_handle_hab_pos_data)
 			else:
 				# otherwise try to load the next random placement (it will attempt a few times, currently 10).
 				# If that fails, then we load new habitat.
 				try:
-					self.choose_random_placement_in_habitat()
+					self.choose_random_placement_in_habitat(how_to_handle_hab_pos_data)
 				except ValueError as e:
-					self.load_random_habitat()
+					self.load_random_habitat(how_to_handle_hab_pos_data)
 
 		self.isFirst = True  # we just loaded a new scene or habitat. The next observation will be first
 
@@ -146,7 +160,7 @@ class RemoteEnv:
 	##
 	# Load the given habitat- load it, and put agent in a random place
 	##
-	def load_habitat(self, habitat_id):
+	def load_habitat(self, habitat_id, how_to_handle_hab_pos_data: 'RemoteEnv.WhatToDoWithHabPosData' = WhatToDoWithHabPosData.SEND_FRESH):
 		# print("LH1")
 		# load required habitat
 		# print("AE: haba: ", habitat_id)
@@ -185,7 +199,7 @@ class RemoteEnv:
 			self.habitat)
 
 		# Now place the robot in a random position and figure out the target from there.
-		self.choose_random_placement_in_habitat()
+		self.choose_random_placement_in_habitat(how_to_handle_hab_pos_data)
 
 	# self.choose_specific_placement_in_habitat()
 	# print("LH2")
@@ -258,7 +272,8 @@ class RemoteEnv:
 	# Here we will select a number of random placements and then choose one to navigate from it
 	# to some goal.
 	##
-	def choose_random_placement_in_habitat(self):
+	def choose_random_placement_in_habitat(self,
+										   how_to_handle_hab_pos_data: 'RemoteEnv.WhatToDoWithHabPosData' = WhatToDoWithHabPosData.SEND_FRESH):
 		# print("CH1")
 		## All we need is a set of random positions and we get them like this:
 		# params for the random teleportation part
@@ -368,15 +383,15 @@ class RemoteEnv:
 			# print("CH2")
 			path_planned = True
 
-			self.send_habitat_and_pos_data(cur_pos)
+			self.send_habitat_and_pos_data(cur_pos, how_to_handle_hab_pos_data)
 
-	def send_habitat_and_pos_data(self, cur_pos):
+	def send_habitat_and_pos_data(self, cur_pos, what_to_do: 'RemoteEnv.WhatToDoWithHabPosData') -> None:
 		# Send initial READY response
 		response = {"msg": "HAB_AND_POS",
 					"hab_set": self.hab_set,
 					"hab_id": self.habitat_id,
 					"cur_pos": cur_pos,
-					"current_target_point": self.current_target_point,
+					"current_target_point": (self.current_target_point.x, self.current_target_point.y),
 					"initial_path_length": self.initial_path_length,
 					"astar_path": self.astar_path,
 					"path_start": self.path_start,
@@ -385,7 +400,14 @@ class RemoteEnv:
 					"current_path_length": self.current_path_length,
 					"best_path_length": self.best_path_length
 					}
-		send_data(self.conn, json.dumps(response).encode(self.encoding))
+		print("response: ", response)
+		if what_to_do == self.WhatToDoWithHabPosData.SEND_FRESH:
+			send_data(self.conn, json.dumps(response).encode(self.encoding))
+		elif what_to_do == self.WhatToDoWithHabPosData.STORE:
+			self.stored_hab_and_pos = response
+		elif what_to_do == self.WhatToDoWithHabPosData.SEND_STORED:
+			send_data(self.conn, json.dumps(self.stored_hab_and_pos).encode(self.encoding))
+			self.stored_hab_and_pos = None
 
 	# Determines if we have little enough left to call it an achieved goal
 	def have_we_arrived(self, epsilon=0.0):
@@ -450,7 +472,7 @@ class RemoteEnv:
 		print(f"-> Received action: {action_from_dreamer}")
 
 		# Execute action
-		cur_obs = self.step(action_from_dreamer)
+		cur_obs, episode_stats = self.step(action_from_dreamer)
 
 		# Prepare Frame (Convert numpy array to JPEG bytes)
 		# Use CV2 to encode the numpy array as JPEG for efficient transfer
@@ -460,16 +482,18 @@ class RemoteEnv:
 		frame_bytes = buffer.tobytes()
 		# now nullify the current ndarray of picture data, because we don't want to send it with json data
 		cur_obs["pov"] = []
-		print(cur_obs)
-		send_data(conn, json.dumps(cur_obs).encode(self.encoding))
+		#print(cur_obs)
+		return_structure = {"obs": cur_obs, "eps": episode_stats}
+		send_data(conn, json.dumps(return_structure).encode(self.encoding))
 		# now send jpeg data
 		send_data(conn, frame_bytes)
 
 	def step(self, action):
+		episode_stats = {}
 		# If this env has been retired (in evaluation mode we have evaluated everything already), then
 		# don't actually do any stepping, but just return the previous obs
 		if self.env_retired:
-			return self.prev_obs
+			return self.prev_obs, episode_stats
 
 		if action['reset']:
 			print('R', end='', sep='')
@@ -528,7 +552,7 @@ class RemoteEnv:
 		self.step_count_in_current_episode += 1
 		self.step_count_since_start += 1
 		self.prev_obs = obs
-		return obs
+		return obs, episode_stats
 
 	##
 	# Returns current observation of the state (image mostly)
@@ -571,7 +595,7 @@ class RemoteEnv:
 		self.chosen_actions = []
 		# Load new point or even a habitat, set reward to 0 and is_first = True and is_last = False and self._done = False
 		with self.LOCK:
-			self.load_next_start_point()
+			self.load_next_start_point(how_to_handle_hab_pos_data = self.WhatToDoWithHabPosData.STORE)
 		# obs = self._env.step({'reset': True})
 
 		self.step_count_in_current_episode = 0
@@ -599,13 +623,23 @@ class RemoteEnv:
 				if not cmd_data_bytes:
 					raise Exception("Client closed connection.")
 				command = json.loads(cmd_data_bytes.decode(self.encoding))
+				print("incoming cmd: ", command)
 				# here we handle what the client wants exactly
 				if command.get("command") == "INIT":
 					self.initialize_connection(conn, command)
 				elif command.get("command") == "ACT":
 					self.execute_action(conn, command)
 				elif command.get("command") == "NEXT_POINT":
-					self.load_next_start_point()
+					self.load_next_start_point(how_to_handle_hab_pos_data = self.WhatToDoWithHabPosData.SEND_FRESH)
+				elif command.get("command") == "GET_SAVED_HAB_AND_POS":
+					'''
+					When we reset the env, we will be returning an observation as normal, but as part of the reset, will
+					be loading the next start point, which in itself triggers sending back data to the client. So to avoid
+					a situation where client is expecting an observation and episode stats, but we are sending habitat stats
+					for the newly loaded location, we will need to store the habitat stats and send it later, when requested.
+					This will handle that type of request.
+					'''
+					self.send_habitat_and_pos_data(None, self.WhatToDoWithHabPosData.SEND_STORED)
 		except Exception as e:
 			print(f"Error handling client {addr}: {e}")
 		finally:
@@ -614,11 +648,10 @@ class RemoteEnv:
 			print(f"Connection with {addr} closed.")
 
 class ServerSocketMaster():
-	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8', env_type = "RoomCentreFinder"):
+	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8'):
 		self.host = host
 		self.port = port
 		self.encoding = encoding
-		self.env_type = env_type
 		self.running_envs = []
 
 	def start_server(self):
@@ -630,11 +663,41 @@ class ServerSocketMaster():
 
 			while True:
 				conn, addr = server_socket.accept()
-				# Handle client connection in a new thread
-				if self.env_type == "RoomCentreFinder":
-					env = RoomCentreFinder(self.host, self.port, self.encoding, conn)
+				cmd_data_bytes = recv_data(conn)
+				if not cmd_data_bytes:
+					raise Exception("Client closed connection.")
+				command = json.loads(cmd_data_bytes.decode(self.encoding))
+				# here we handle what the client wants exactly
+				if command.get("command") == "INIT":
+					hab_id = command.get("hab_id", "1")
+					hab_set = command.get("hab_set", "train")
+					hab_min = command.get("hab_min", 0)
+					hab_max = command.get("hab_max", 9)
+					env_type = command.get("env_type", "RoomCentreFinder")
 				else:
-					env = DoorFinder(self.host, self.port, self.encoding, conn)
+					raise Exception("Client's first command was not INIT")
+
+				# Initialize AI2-THOR controller on the server
+				print(f"Initializing AI2-THOR for scene: {hab_set}[{hab_id}]...")
+				print("AI2-THOR initialized. Ready for actions.")
+
+				# Send initial READY response
+				response = {"status": "READY",
+							"scene": hab_set + "[" + str(hab_id) + "]",
+							# "reachable_positions": self.reachable_positions,
+							# "unreachable_postions": list(self.unreachable_postions),
+							# "full_grid": self.full_grid
+							}
+				send_data(conn, json.dumps(response).encode(self.encoding))
+
+				# Handle client connection in a new thread
+				if env_type == "RoomCentreFinder":
+					env = RoomCentreFinder(encoding = self.encoding, conn = conn, hab_space=(hab_min, hab_max), hab_set = hab_set)
+				elif env_type == "DoorFinder":
+					env = DoorFinder(encoding = self.encoding, conn = conn, hab_space=(hab_min, hab_max), hab_set = hab_set)
+				else:
+					raise Exception("Unknown Env type specified by client")
+
 				self.running_envs.append(env)
 				client_thread = threading.Thread(target=env.handle_client, args=(conn, addr))
 				client_thread.start()
@@ -741,5 +804,5 @@ class DoorFinder(RemoteEnv):
         return (self.current_path_length <= epsilon or self.steps_in_new_room >= 3)
 
 if __name__ == "__main__":
-	ssm = ServerSocketMaster(env_type = "RoomCentreFinder")
+	ssm = ServerSocketMaster()
 	ssm.start_server()

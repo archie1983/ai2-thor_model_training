@@ -324,6 +324,8 @@ class NavigationUtils:
 
                 # Reverse it because we started at the destination when working our way back
                 self.last_path_gen.reverse()
+                worklist.__init__()
+                worklist = None
                 return best_cost
 
             # AE: Look at all defined actions and try each of them from the current pose and see what happens
@@ -364,6 +366,8 @@ class NavigationUtils:
 
         # AE: If we're here, then that means, we could not find a path.
         # AE: print warning and return something.
+        worklist.__init__()
+        worklist = None
         raise ValueError("Plan not found from {} to {}".format(start_point, destination))
         # return float("inf")
 
@@ -519,8 +523,8 @@ class NavigationUtils:
                 all_door_targets.append({"pos": target_position,
                                          "in_same_room": is_in_same_room,
                                          "visible": door['visible'],
-                                         "distance": door_path_length,
-                                         "door_obj": door})
+                                         "distance": door_path_length,})
+                                         #"door_obj": door})
         #print("all_door_targets: ", all_door_targets)
 
         # Ideally we want to get a door that is in the same room, but not yet visible, because we want to elicit

@@ -19,7 +19,7 @@ from ai2thor_colab import (
 
 import prior
 
-from thortils import thor_teleport2d
+from thortils.agent import thor_teleport2d
 from thortils.controller import _resolve
 from thortils.agent import thor_agent_pose, thor_pose_as_tuple
 

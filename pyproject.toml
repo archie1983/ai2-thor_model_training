@@ -11,13 +11,13 @@ dependencies = [
     # Add your actual dependencies here, e.g.:
     "numpy",
     "matplotlib",
-    "ai2thor",
+#    "ai2thor",
     "tqdm",
-    "opencv-python",
+#    "opencv-python",
     "Pillow",
     "shapely",
     "prior",
-    "ai2thor_colab",
+#    "ai2thor_colab",
     "moviepy==1.0.3"
 ]
 
@@ -25,9 +25,9 @@ dependencies = [
 dev = [
     "pytest",
     "black",
-    "ipykernel",
-    "jupyterlab",
-    "torch"
+#    "ipykernel",
+#    "jupyterlab",
+#    "torch"
 ]
 
 [build-system]

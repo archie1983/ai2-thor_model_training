@@ -9,6 +9,6 @@ from .ai2_thor_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
                             action_to_index, index_to_action, euclidean_dist, get_room_poly_by_room_id,
                             create_full_grid_from_room_layout, add_buffer_to_unreachable)
 
-from .navigation import NavigationUtils
+#from .navigation import NavigationUtils
 
 from .connection import (recv_data, send_data)

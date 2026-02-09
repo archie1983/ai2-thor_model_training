@@ -2,8 +2,8 @@ from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from . import RoomType
 import math, cv2, prior, copy
-from thortils.utils.math import (euclidean_dist, to_deg)
-from thortils.agent import thor_pose_as_tuple
+#from thortils.utils.math import (euclidean_dist, to_deg)
+#from thortils.agent import thor_pose_as_tuple
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
@@ -534,6 +534,20 @@ def get_objects_of_multiple_types(event_or_controller, obj_types_of_interest):
 def convert_pose_set2tuple(pose_as_set):
     return ((pose_as_set[0]['x'], pose_as_set[0]['y'], pose_as_set[0]['z']),
             (pose_as_set[1]['x'], pose_as_set[1]['y'], pose_as_set[1]['z']))
+
+def thor_pose_as_tuple(pose_or_component):
+    """
+    Returns tuple representation of given pose
+    or pose component (position or rotation).
+    """
+    if type(pose_or_component) == tuple:
+        position, rotation = pose_or_component
+        return (position["x"], position["y"], position["z"]),\
+            (rotation["x"], rotation["y"], rotation["z"])
+    else:
+        return (pose_or_component["x"],
+                pose_or_component["y"],
+                pose_or_component["z"])
 
 ##
 # Calculates a cost (or length) of a path.

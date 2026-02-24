@@ -1,6 +1,6 @@
 # ai2thor_server.py (Run on X86 Laptop)
 
-import socket, json, cv2, logging, threading, elements, random, traceback, pbd, pickle, os, time
+import socket, json, cv2, logging, threading, elements, random, traceback, pbd, pickle, os, time, itertools
 import numpy as np
 from connection import (recv_data, send_data)
 from ai2_thor_model_training.ae_utils import (NavigationUtils, action_mapping,
@@ -180,6 +180,7 @@ class RemoteEnv:
 		# load required habitat
 		# print("AE: haba: ", habitat_id)
 		self.habitat = self.atu.load_proctor_habitat(int(habitat_id), self.hab_set)
+
 		self.explored_placements_in_current_habitat = []
 		#breakpoint()
 		# Launch a controller for the loaded habitat. If we already have a controller,
@@ -219,12 +220,39 @@ class RemoteEnv:
 		self.reachable_positions, self.unreachable_postions, self.full_grid, self.rooms_in_habitat = self.update_navigation_artifacts(
 			self.habitat)
 
+		## Check the suitability of the habitat
+		rooms_in_habitat = get_rooms_ground_truth(self.habitat)
+		# we want to check that each room centre can be reached from all other room centres
+		if len(rooms_in_habitat) < 2 or not self.verify_habitat_connectivity(rooms_in_habitat):
+			print("SKIPPING habitat ", habitat_id, " as not suitable")
+			raise ValueError("Not all rooms are connected.")
+
 		# Now place the robot in a random position and figure out the target from there.
 		print("LH7")
 		self.choose_random_placement_in_habitat(how_to_handle_hab_pos_data)
 
 	# self.choose_specific_placement_in_habitat()
 	# print("LH2")
+
+	##
+	# Checking if all rooms are connected. We will want that for complex tasks.
+	##
+	def verify_habitat_connectivity(self, rooms_in_habitat):
+		"""Verify all rooms in habitat are connected"""
+		centers = [room[2] for room in rooms_in_habitat]
+		# Simple combination check
+		for center_a, center_b in itertools.combinations(centers, 2):
+			start_point = ((center_a.x, 0.9009993672370911, center_a.y), (0, 180, 0))
+			try:
+				path_length = self.nu.get_path_cost_to_target_point(start_point,
+																				 center_b,
+																				 self.reachable_positions,
+																				 close_enough=self.plan_close_enough,
+																				 step=self.grid_size)
+			except ValueError as e:
+				return False
+
+		return True
 
 	# Get all reachable positions and store them in a variable.
 	def update_navigation_artifacts(self, house):
@@ -514,21 +542,22 @@ class RemoteEnv:
 
 		# Execute action
 		cur_obs, episode_stats = self.step(action_from_dreamer)
-		print("AE: Env stepped")
+		#print("AE: Env stepped")
 
 		# Prepare Frame (Convert numpy array to JPEG bytes)
 		# Use CV2 to encode the numpy array as JPEG for efficient transfer
 		is_success, buffer = cv2.imencode(".jpg", cur_obs["pov"])
-		print("AE: IMG encoded")
+		#print("AE: IMG encoded")
 		if not is_success:
 			raise Exception("Failed to encode frame to JPEG.")
 		frame_bytes = buffer.tobytes()
-		print("AE: img buffered")
+		#print("AE: img buffered")
 		# now nullify the current ndarray of picture data, because we don't want to send it with json data
 		cur_obs["pov"] = []
 		#print(cur_obs)
+		episode_stats = {}
 		return_structure = {"obs": cur_obs, "eps": episode_stats}
-		print("AE: cmd ready to send: ", return_structure)
+		#print("AE: cmd ready to send: ", return_structure)
 		send_data(conn, json.dumps(return_structure).encode(self.encoding))
 		print("AE: cmd sent: ", action_from_dreamer['reset'])
 		# now send jpeg data
@@ -802,7 +831,7 @@ class ServerSocketMaster():
 					hab_min = command.get("hab_min", 0)
 					hab_max = command.get("hab_max", 9)
 					hab_set = "test"
-					hab_min = 0
+					hab_min = 873
 					hab_max = 999
 					env_type = command.get("env_type", "RoomCentreFinder")
 					agent_type = command.get("agent_type", "")

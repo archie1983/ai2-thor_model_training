@@ -105,6 +105,360 @@ class AI2THORUtils:
 
     def set_controller(self, controller):
         self.controller = controller
+        self.has_top_down_camera = False
+
+    def visualise_path3(self, path, reachable_positions, unreachable_positions,
+                        rooms_in_habitat, start, goal,
+                        show_reachable_pos=False, show_unreachable_pos=False):
+
+        # Get the top-down image
+        img = self.get_top_down_frame(True)
+        img_height, img_width = img.shape[:2]
+        px_min, py_min, px_max, py_max = self._detect_habitat_pixel_bounds(img)
+        py_min += 20
+        py_max -= 20
+        px_min += 40
+        px_max -= 40
+        habitat_img = img[py_min:py_max + 1, px_min:px_max + 1]
+        img = Image.fromarray(habitat_img)
+
+        # Get world coordinate bounds from room corners
+        all_corners = [corner for room_name, corners, center in rooms_in_habitat for corner in corners]
+
+        x_min = min([pos[0] for pos in all_corners])
+        x_max = max([pos[0] for pos in all_corners])
+        z_min = min([pos[1] for pos in all_corners])
+        z_max = max([pos[1] for pos in all_corners])
+
+        #print(f"World bounds: X=[{x_min:.2f}, {x_max:.2f}], Z=[{z_min:.2f}, {z_max:.2f}]")
+        #print(f"Image size: {img_width} x {img_height} pixels")
+
+        # Setup plot
+        plt.ion()
+        if self.path_fig is None or not plt.fignum_exists(self.path_fig.number):
+            self.path_fig, self.path_ax = plt.subplots(figsize=(10, 8))
+            self.path_fig.canvas.manager.set_window_title("AI2-Thor Path Visualization")
+        else:
+            self.path_ax.clear()
+
+        # METHOD 1: Use extent to map image to world coordinates
+        # This is the CORRECT approach - imshow handles the scaling
+        extent = [x_min, x_max, z_min, z_max]  # [left, right, bottom, top]
+
+        # Display the image with proper extent
+        # Note: origin='lower' because world coordinates increase upward
+        self.path_ax.imshow(img, extent=extent, origin='upper', aspect='auto')
+
+        # Now plot points in WORLD COORDINATES (no manual scaling!)
+
+        # Plot reachable positions (if requested)
+        if show_reachable_pos:
+            # Get reachable positions from AI2-Thor
+            event = self.controller.step(action="GetReachablePositions")
+            r_positions = event.metadata["actionReturn"]
+
+            if r_positions:
+                reachable_x = [pos['x'] for pos in r_positions]
+                reachable_z = [pos['z'] for pos in r_positions]
+
+                # Plot in world coordinates
+                self.path_ax.scatter(reachable_x, reachable_z,
+                                     s=10, c='green', alpha=0.3,
+                                     label='Reachable', zorder=2)
+
+                print(f"Reachable positions: {len(reachable_x)} points")
+                print(f"X range: [{min(reachable_x):.2f}, {max(reachable_x):.2f}]")
+                print(f"Z range: [{min(reachable_z):.2f}, {max(reachable_z):.2f}]")
+
+        # Plot start position
+        if start:
+            xs = start[0][0]  # x coordinate
+            zs = start[0][2]  # z coordinate
+            self.path_ax.scatter([xs], [zs], s=200, c='red', marker='*',
+                                 edgecolors='white', linewidth=2,
+                                 label='Start', zorder=5)
+
+        # Plot goal position
+        if goal:
+            xg = goal[0][0]  # x coordinate
+            zg = goal[0][2]  # z coordinate
+            self.path_ax.scatter([xg], [zg], s=200, c='green', marker='*',
+                                 edgecolors='white', linewidth=2,
+                                 label='Goal', zorder=5)
+
+        # Plot path
+        if path and len(path) > 0:
+            # Extract x and z coordinates
+            path_x = [step[0] for step in path]
+            path_z = [step[1] for step in path]
+
+            # Plot path points
+            self.path_ax.scatter(path_x, path_z, s=30, c='blue',
+                                 alpha=0.7, label='Path points', zorder=3)
+
+            # Plot path as connected line
+            self.path_ax.plot(path_x, path_z, 'cyan', linewidth=2,
+                              alpha=0.5, label='Path', zorder=2)
+
+        # Optional: Add room boundaries if available
+        # for room_name, corners, center in rooms_in_habitat:
+        #     room_x = [corner[0] for corner in corners]
+        #     room_z = [corner[1] for corner in corners]
+        #     self.path_ax.plot(room_x + [room_x[0]], room_z + [room_z[0]],
+        #                     'yellow', linewidth=1, alpha=0.5)
+
+        # Set labels and title
+        self.path_ax.set_xlabel('X (meters)')
+        self.path_ax.set_ylabel('Z (meters)')
+        self.path_ax.set_title('Habitat Top-Down View with Path')
+
+        # Equal aspect ratio to preserve shape
+        self.path_ax.set_aspect('equal')
+
+        # Add grid for reference
+        self.path_ax.grid(True, alpha=0.3, linestyle='--')
+
+        # Legend
+        self.path_ax.legend(loc='upper right')
+
+        # Update display
+        self.path_fig.canvas.draw()
+        self.path_fig.canvas.flush_events()
+        plt.show(block=False)
+
+        return self.path_fig, self.path_ax
+
+    def visualise_path_multi_path(self, paths_and_colors, reachable_positions, unreachable_positions,
+                        rooms_in_habitat, start=None, desired_goal=None, real_goal=None,
+                        show_reachable_pos=False, show_unreachable_pos=False, filename="image"):
+
+        # Get the top-down image
+        img = self.get_top_down_frame(True)
+        img_height, img_width = img.shape[:2]
+        px_min, py_min, px_max, py_max = self._detect_habitat_pixel_bounds(img)
+        py_min += 20
+        py_max -= 20
+        px_min += 40
+        px_max -= 40
+        habitat_img = img[py_min:py_max + 1, px_min:px_max + 1]
+        img = Image.fromarray(habitat_img)
+
+        # Get world coordinate bounds from room corners
+        all_corners = [corner for room_name, corners, center in rooms_in_habitat for corner in corners]
+
+        x_min = min([pos[0] for pos in all_corners])
+        x_max = max([pos[0] for pos in all_corners])
+        z_min = min([pos[1] for pos in all_corners])
+        z_max = max([pos[1] for pos in all_corners])
+
+        #print(f"World bounds: X=[{x_min:.2f}, {x_max:.2f}], Z=[{z_min:.2f}, {z_max:.2f}]")
+        #print(f"Image size: {img_width} x {img_height} pixels")
+
+        # Setup plot
+        plt.ion()
+        if self.path_fig is None or not plt.fignum_exists(self.path_fig.number):
+            self.path_fig, self.path_ax = plt.subplots(figsize=(10, 8))
+            self.path_fig.canvas.manager.set_window_title("AI2-Thor Path Visualization")
+        else:
+            self.path_ax.clear()
+
+        # METHOD 1: Use extent to map image to world coordinates
+        # This is the CORRECT approach - imshow handles the scaling
+        extent = [x_min, x_max, z_min, z_max]  # [left, right, bottom, top]
+
+        # Display the image with proper extent
+        # Note: origin='lower' because world coordinates increase upward
+        self.path_ax.imshow(img, extent=extent, origin='upper', aspect='auto')
+
+        # Now plot points in WORLD COORDINATES (no manual scaling!)
+
+        # Plot reachable positions (if requested)
+        if show_reachable_pos:
+            # Get reachable positions from AI2-Thor
+            event = self.controller.step(action="GetReachablePositions")
+            r_positions = event.metadata["actionReturn"]
+
+            if r_positions:
+                reachable_x = [pos['x'] for pos in r_positions]
+                reachable_z = [pos['z'] for pos in r_positions]
+
+                # Plot in world coordinates
+                self.path_ax.scatter(reachable_x, reachable_z,
+                                     s=10, c='green', alpha=0.3,
+                                     label='Reachable', zorder=2)
+
+                print(f"Reachable positions: {len(reachable_x)} points")
+                print(f"X range: [{min(reachable_x):.2f}, {max(reachable_x):.2f}]")
+                print(f"Z range: [{min(reachable_z):.2f}, {max(reachable_z):.2f}]")
+
+        # Plot start position
+        if start:
+            xs = start[0][0]  # x coordinate
+            zs = start[0][2]  # z coordinate
+            self.path_ax.scatter([xs], [zs], s=200, c='red', marker='*',
+                                 #edgecolors='white', linewidth=2,
+                                 label='Start', zorder=5)
+
+        # Plot goal position
+        if desired_goal:
+            xg = desired_goal[0][0]  # x coordinate
+            zg = desired_goal[0][2]  # z coordinate
+            self.path_ax.scatter([xg], [zg], s=200, c='blue', marker='*',
+                                 #edgecolors='white', linewidth=2,
+                                 label='Goal', zorder=5)
+
+        # Plot real goal position
+        if real_goal:
+            xg = real_goal[0][0]  # x coordinate
+            zg = real_goal[0][2]  # z coordinate
+            self.path_ax.scatter([xg], [zg], s=200, c='green', marker='*',
+                                 #edgecolors='white', linewidth=2,
+                                 label='Goal', zorder=5)
+
+        # Plot path
+        for path, color in paths_and_colors:
+            if path and len(path) > 0:
+                # Extract x and z coordinates
+                path_x = [step[0] for step in path]
+                path_z = [step[1] for step in path]
+
+                # Plot path points
+                self.path_ax.scatter(path_x, path_z, s=30, c=color,
+                                     alpha=0.3, label='Path points', zorder=3)
+
+                # Plot path as connected line
+                self.path_ax.plot(path_x, path_z, color, linewidth=2,
+                                  alpha=0.3, label='Path', zorder=2)
+
+        # Set labels and title
+        #self.path_ax.set_xlabel('X (meters)')
+        #self.path_ax.set_ylabel('Z (meters)')
+        #self.path_ax.set_title('Habitat Top-Down View with Path')
+
+        # Equal aspect ratio to preserve shape
+        self.path_ax.set_aspect('equal')
+
+        # Add grid for reference
+        #self.path_ax.grid(True, alpha=0.3, linestyle='--')
+
+        # Legend
+        #self.path_ax.legend(loc='upper right')
+
+        # Update display
+        self.path_fig.canvas.draw()
+        self.path_fig.canvas.flush_events()
+        #plt.show(block=False)
+
+        # Save to file instead of showing
+        plt.savefig(filename, dpi=300, bbox_inches='tight', pad_inches=0.1)
+        #print(f"✅ Path visualization saved to: {filename}")
+
+        # Close the figure to free memory
+        plt.close(self.path_fig)
+
+        return self.path_fig, self.path_ax
+
+    def get_habitat_image_bounds(self):
+        """Get the pixel bounds of the actual habitat within the top-down image"""
+
+        # Get the top-down image
+        img = self.get_top_down_frame(return_img_as_buffer=True)
+        height, width = img.shape[:2]
+
+        # Method 1: Use scene bounds from metadata
+        event = self.controller.step(action="GetMapViewCameraProperties", raise_for_failure=True)
+        scene_bounds = event.metadata["sceneBounds"]
+
+        # The scene bounds give you the world dimensions
+        world_width = scene_bounds["size"]["x"]
+        world_depth = scene_bounds["size"]["z"]
+
+        # But we need to know how this maps to pixels
+        # The camera pose tells us where the camera is looking
+        camera_pose = event.metadata["actionReturn"]
+
+        # Calculate the visible world area based on camera parameters
+        # This is tricky - easier to detect from image itself
+
+        return self._detect_habitat_pixel_bounds(img)
+
+    def _detect_habitat_pixel_bounds(self, img):
+        """
+        Detect the actual habitat bounds in the image by looking for
+        non-white/non-empty pixels
+        """
+        # Convert to grayscale if needed
+        if len(img.shape) == 3:
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = img
+
+        # Find pixels that are NOT white/empty
+        # Adjust threshold based on your image background
+        non_empty = gray < 250  # Pixels darker than near-white
+
+        # Find rows and columns with any non-empty pixels
+        rows_with_content = np.any(non_empty, axis=1)
+        cols_with_content = np.any(non_empty, axis=0)
+
+        # Get bounds
+        row_indices = np.where(rows_with_content)[0]
+        col_indices = np.where(cols_with_content)[0]
+
+        if len(row_indices) == 0 or len(col_indices) == 0:
+            # Fallback: use whole image
+            return 0, 0, img.shape[1], img.shape[0]
+
+        y_min = row_indices[0]
+        y_max = row_indices[-1]
+        x_min = col_indices[0]
+        x_max = col_indices[-1]
+
+        #print(f"Detected habitat pixel bounds: X=[{x_min}, {x_max}], Y=[{y_min}, {y_max}]")
+        #print(f"Habitat occupies {((x_max - x_min) / (img.shape[1]) * 100):.1f}% of image width")
+
+        return x_min, y_min, x_max, y_max
+
+    # Test to verify coordinate alignment
+    def test_coordinate_alignment(self, rooms_in_habitat):
+        """Test if reachable positions align with image"""
+
+        # Get data
+        img = self.get_top_down_frame()
+        event = self.controller.step(action="GetReachablePositions")
+        positions = event.metadata["actionReturn"]
+
+        if not positions:
+            print("No reachable positions")
+            return
+
+        # Get room bounds
+        all_corners = [corner for room_name, corners, center in rooms_in_habitat for corner in corners]
+        x_min, x_max = min(p[0] for p in all_corners), max(p[0] for p in all_corners)
+        z_min, z_max = min(p[1] for p in all_corners), max(p[1] for p in all_corners)
+
+        # Plot
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+
+        # Left: Raw image coordinates
+        ax1.imshow(img)
+        ax1.set_title("Image Coordinates (pixels)")
+        ax1.set_xlabel("X pixel")
+        ax1.set_ylabel("Y pixel")
+
+        # Right: World coordinates with extent
+        extent = [x_min, x_max, z_min, z_max]
+        ax2.imshow(img, extent=extent, origin='lower')
+        ax2.scatter([p['x'] for p in positions], [p['z'] for p in positions],
+                    s=1, c='red', alpha=0.5)
+        ax2.set_title("World Coordinates with Extent")
+        ax2.set_xlabel("X (meters)")
+        ax2.set_ylabel("Z (meters)")
+        ax2.set_aspect('equal')
+
+        plt.tight_layout()
+        plt.show()
+
 
     def visualise_path2(self, path, reachable_positions, unreachable_postions,
                         rooms_in_habitat, start, goal,
@@ -129,6 +483,9 @@ class AI2THORUtils:
         else:
             # Clear the existing plot
             self.path_ax.clear()
+
+        x_aspect = 600 / (x_max - x_min)
+        y_aspect = 600 / (z_max - z_min)
 
         # AE: Debug
         if show_reachable_pos:
@@ -167,7 +524,7 @@ class AI2THORUtils:
             reachable_y = [pos[1] for pos in reachable_positions]
             #reachable_x = [pos[0] for pos in r_positions]
             #reachable_y = [pos[1] for pos in r_positions]
-            self.path_ax.scatter(reachable_x, reachable_y, s=50, c='white', alpha=0.5, zorder=4, label='Pstep')
+            self.path_ax.scatter(reachable_x, reachable_y, s=50, c='green', alpha=0.5, zorder=4, label='Pstep')
         if show_unreachable_pos:
             unreachable_x = [pos[0] for pos in unreachable_postions]
             unreachable_y = [pos[1] for pos in unreachable_postions]
@@ -195,7 +552,9 @@ class AI2THORUtils:
             [-x_max, -x_min, z_max, z_min],  # Both flipped
         ]
 
-        self.path_ax.imshow(img, extent=extents[0], origin='upper')  # Use origin='upper' to match coordinate system
+        print("ex:", extents[0])
+        self.path_ax.imshow(img, aspect="auto", origin='upper', extent=extents[0])
+        #self.path_ax.imshow(img, aspect = "auto", extent=extents[0], origin='upper')  # Use origin='upper' to match coordinate system
 
         #self.path_ax.scatter([agent_pos['x']], [agent_pos['z']], s=25, c='magenta', zorder=4, label='Agent')
 
@@ -303,7 +662,7 @@ class AI2THORUtils:
     ##
     # For display purposes - the top down view of the habitat
     ##
-    def get_top_down_frame(self):
+    def get_top_down_frame(self, return_img_as_buffer = False):
         # Setup the top-down camera
         event = self.controller.step(action="GetMapViewCameraProperties", raise_for_failure=True)
         pose = copy.deepcopy(event.metadata["actionReturn"])
@@ -344,8 +703,12 @@ class AI2THORUtils:
             )
 
         top_down_frame = event.third_party_camera_frames[self.top_down_camera_id]
+        #print("AE: sha: ", top_down_frame.shape)
 
-        return Image.fromarray(top_down_frame)
+        if return_img_as_buffer:
+            return top_down_frame
+        else:
+            return Image.fromarray(top_down_frame)
 
 ##
 # Calculates the angle that we need to turn in order to face p2 if we are

@@ -4,6 +4,8 @@ def send_data(sock, data):
 	"""Sends a complete message (action command) to the server."""
 	size_prefix = struct.pack("!I", len(data))
 	sock.sendall(size_prefix)
+	if len(data) < 1000:
+		print("OUT: ", data)
 	sock.sendall(data)
 
 

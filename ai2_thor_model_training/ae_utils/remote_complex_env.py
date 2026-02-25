@@ -1,6 +1,6 @@
 # ai2thor_server.py (Run on X86 Laptop)
 
-import socket, json, cv2, logging, threading, elements, random, traceback, pbd, pickle, os
+import socket, json, cv2, logging, threading, elements, random, traceback, pbd, pickle, os, time, itertools
 import numpy as np
 from connection import (recv_data, send_data)
 from ai2_thor_model_training.ae_utils import (NavigationUtils, action_mapping,
@@ -83,6 +83,7 @@ class RemoteEnv:
 		self.places_per_hab = 10
 		self.behaviour_type = behaviour_type
 		self.is_complex_behaviour = False if self.behaviour_type == "simple" else True
+		self.episode_stats = None
 
 	def load_random_habitat(self, how_to_handle_hab_pos_data: 'RemoteEnv.WhatToDoWithHabPosData' = WhatToDoWithHabPosData.SEND_FRESH):
 		print("LRH1")
@@ -179,6 +180,7 @@ class RemoteEnv:
 		# load required habitat
 		# print("AE: haba: ", habitat_id)
 		self.habitat = self.atu.load_proctor_habitat(int(habitat_id), self.hab_set)
+
 		self.explored_placements_in_current_habitat = []
 		#breakpoint()
 		# Launch a controller for the loaded habitat. If we already have a controller,
@@ -205,6 +207,7 @@ class RemoteEnv:
 		else:
 			print("LH4")
 			self.controller.reset(self.habitat)
+			print("LH4.1")
 			# self.reset_state()
 			self.rnc.reset_state()
 			print("LH5")
@@ -217,12 +220,39 @@ class RemoteEnv:
 		self.reachable_positions, self.unreachable_postions, self.full_grid, self.rooms_in_habitat = self.update_navigation_artifacts(
 			self.habitat)
 
+		## Check the suitability of the habitat
+		rooms_in_habitat = get_rooms_ground_truth(self.habitat)
+		# we want to check that each room centre can be reached from all other room centres
+		if len(rooms_in_habitat) < 2 or not self.verify_habitat_connectivity(rooms_in_habitat):
+			print("SKIPPING habitat ", habitat_id, " as not suitable")
+			raise ValueError("Not all rooms are connected.")
+
 		# Now place the robot in a random position and figure out the target from there.
 		print("LH7")
 		self.choose_random_placement_in_habitat(how_to_handle_hab_pos_data)
 
 	# self.choose_specific_placement_in_habitat()
 	# print("LH2")
+
+	##
+	# Checking if all rooms are connected. We will want that for complex tasks.
+	##
+	def verify_habitat_connectivity(self, rooms_in_habitat):
+		"""Verify all rooms in habitat are connected"""
+		centers = [room[2] for room in rooms_in_habitat]
+		# Simple combination check
+		for center_a, center_b in itertools.combinations(centers, 2):
+			start_point = ((center_a.x, 0.9009993672370911, center_a.y), (0, 180, 0))
+			try:
+				path_length = self.nu.get_path_cost_to_target_point(start_point,
+																				 center_b,
+																				 self.reachable_positions,
+																				 close_enough=self.plan_close_enough,
+																				 step=self.grid_size)
+			except ValueError as e:
+				return False
+
+		return True
 
 	# Get all reachable positions and store them in a variable.
 	def update_navigation_artifacts(self, house):
@@ -412,7 +442,7 @@ class RemoteEnv:
 			print("CH5")
 			self.send_habitat_and_pos_data(cur_pos, how_to_handle_hab_pos_data)
 
-	def send_habitat_and_pos_data(self, cur_pos, what_to_do: 'RemoteEnv.WhatToDoWithHabPosData') -> None:
+	def send_habitat_and_pos_data(self, cur_pos, what_to_do: 'RemoteEnv.WhatToDoWithHabPosData', conn_to_use = None) -> None:
 		# Send initial READY response
 		#print("AE: self.current_target_point: ", self.current_target_point)
 		response = {"msg": "HAB_AND_POS",
@@ -428,14 +458,20 @@ class RemoteEnv:
 					"current_path_length": self.current_path_length,
 					"best_path_length": self.best_path_length
 					}
-		print("response: ", response)
+		#print("response: ", response)
 		if what_to_do == self.WhatToDoWithHabPosData.SEND_FRESH:
-			send_data(self.conn, json.dumps(response).encode(self.encoding))
+			if conn_to_use == None:
+				send_data(self.conn, json.dumps(response).encode(self.encoding))
+			else:
+				send_data(conn_to_use, json.dumps(response).encode(self.encoding))
 		elif what_to_do == self.WhatToDoWithHabPosData.STORE:
 			self.stored_hab_and_pos = response
 		elif what_to_do == self.WhatToDoWithHabPosData.SEND_STORED:
-			send_data(self.conn, json.dumps(self.stored_hab_and_pos).encode(self.encoding))
-			self.stored_hab_and_pos = None
+			if conn_to_use == None:
+				send_data(self.conn, json.dumps(self.stored_hab_and_pos).encode(self.encoding))
+			else:
+				send_data(conn_to_use, json.dumps(self.stored_hab_and_pos).encode(self.encoding))
+			#self.stored_hab_and_pos = None
 
 	# Determines if we have little enough left to call it an achieved goal
 	def have_we_arrived(self, epsilon=0.0):
@@ -476,14 +512,18 @@ class RemoteEnv:
 		# print("FR2")
 		return room_type
 
-	def initialize_connection(self, conn, command):
-		hab_id = command.get("hab_id", "1")
-		self.hab_set = command.get("hab_set", "train")
+	def initialize_connection(self, conn, command = None):
+		if command == None:
+			hab_id = "83"
+			self.hab_set = "test"
+		else:
+			hab_id = command.get("hab_id", "1")
+			self.hab_set = command.get("hab_set", "train")
 
 		# Initialize AI2-THOR controller on the server
-		print(f"Initializing AI2-THOR for scene: {self.hab_set}[{hab_id}]...")
+		#print(f"2: Initializing AI2-THOR for scene: {self.hab_set}[{hab_id}]...")
 		#self.load_habitat(hab_id)
-		print("AI2-THOR initialized. Ready for actions.")
+		#print("2: AI2-THOR initialized. Ready for actions.")
 
 		# Send initial READY response
 		response = {"status": "READY",
@@ -492,6 +532,7 @@ class RemoteEnv:
 					#"unreachable_postions": list(self.unreachable_postions),
 					#"full_grid": self.full_grid
 					}
+		#print("OUT: ", response)
 		send_data(conn, json.dumps(response).encode(self.encoding))
 
 	def execute_action(self, conn, command):
@@ -501,36 +542,41 @@ class RemoteEnv:
 
 		# Execute action
 		cur_obs, episode_stats = self.step(action_from_dreamer)
+		#print("AE: Env stepped")
 
 		# Prepare Frame (Convert numpy array to JPEG bytes)
 		# Use CV2 to encode the numpy array as JPEG for efficient transfer
 		is_success, buffer = cv2.imencode(".jpg", cur_obs["pov"])
+		#print("AE: IMG encoded")
 		if not is_success:
 			raise Exception("Failed to encode frame to JPEG.")
 		frame_bytes = buffer.tobytes()
+		#print("AE: img buffered")
 		# now nullify the current ndarray of picture data, because we don't want to send it with json data
 		cur_obs["pov"] = []
 		#print(cur_obs)
+		episode_stats = {}
 		return_structure = {"obs": cur_obs, "eps": episode_stats}
+		#print("AE: cmd ready to send: ", return_structure)
 		send_data(conn, json.dumps(return_structure).encode(self.encoding))
+		print("AE: cmd sent: ", action_from_dreamer['reset'])
 		# now send jpeg data
 		send_data(conn, frame_bytes)
-
+		print("AE: img sent: ")
 		return action_from_dreamer['reset']
 
 	def step(self, action):
-		episode_stats = {}
 		# If this env has been retired (in evaluation mode we have evaluated everything already), then
 		# don't actually do any stepping, but just return the previous obs
 		if self.env_retired:
-			return self.prev_obs, episode_stats
+			return self.prev_obs, self.episode_stats
 
 		if action['reset']:
 			print('R', end='', sep='')
 			# STORE EPISODE STATS:
 			# A* path length, A* path, travelled path length, travelled path, habitat id, actions taken.
 			if self.hab_set != "train":
-				episode_stats = {
+				self.episode_stats = {
 					"local_step": self.step_count_since_start,
 					"steps_used": self.step_count_in_current_episode,
 					"habitat_id": self.habitat_id,
@@ -545,7 +591,7 @@ class RemoteEnv:
 				# print(hab_exploration_stats)
 
 				with open(self.logdir + "/episode_data.jsonl", "a") as f:
-					f.write(json.dumps(episode_stats) + "\n")
+					f.write(json.dumps(self.episode_stats) + "\n")
 
 			obs = self._reset()
 		elif index_to_action(int(action['action'])) == "STOP":
@@ -573,7 +619,7 @@ class RemoteEnv:
 			try:
 				self.distance_left, self.room_type, cur_pos_xy = self.get_current_path_and_pose_state()
 				self.travelled_path.append(cur_pos_xy)
-				self._done = bool(self.have_we_arrived(self.reward_close_enough))
+				#self._done = bool(self.have_we_arrived(self.reward_close_enough))
 			except ValueError as e:
 				self.distance_left = np.float32(0.0)
 				self._bad_spot = True
@@ -596,7 +642,7 @@ class RemoteEnv:
 		self.step_count_in_current_episode += 1
 		self.step_count_since_start += 1
 		self.prev_obs = obs
-		return obs, episode_stats
+		return obs, self.episode_stats
 
 	##
 	# Returns current observation of the state (image mostly)
@@ -638,8 +684,8 @@ class RemoteEnv:
 		self.travelled_path = []
 		self.chosen_actions = []
 		# Load new point or even a habitat, set reward to 0 and is_first = True and is_last = False and self._done = False
-		with self.LOCK:
-			self.load_next_start_point(how_to_handle_hab_pos_data = self.WhatToDoWithHabPosData.STORE)
+		#with self.LOCK:
+		#	self.load_next_start_point(how_to_handle_hab_pos_data = self.WhatToDoWithHabPosData.STORE)
 		# obs = self._env.step({'reset': True})
 
 		self.step_count_in_current_episode = 0
@@ -656,29 +702,76 @@ class RemoteEnv:
 		# print("R2")
 		return obs
 
-	def handle_client(self, conn, addr, task_completion_callback = None):
-		print(f"✅ Connection established with {addr}")
-
+	def handle_client(self, conn, addr, task_completion_callback = None, conn_obj = None):
+		print(f"✅ Connection established with {addr} ", self.is_complex_behaviour, conn_obj["unhandled_act_cmd"])
+		self.need_to_run = True
+		# we have to make sure that we call the callback function at the very end of this thread, otherwise we may
+		# start a new one before this one finishes and mess up internal variables.
+		self.callback_needs_calling_in_the_end = False
+		if self.is_complex_behaviour:
+			#self.initialize_connection(conn)
+			# Normally, when we see that Dreamer asked us to reset, we would stop the task and hand back
+			# the control over the socket to the pre_work_comms_handler routine where we handle it
+			# "in a bubble", but we don't want to do that on the first reset, because that's also how
+			# a task starts.
+			first_reset_dont_end_episode = True
+		else:
+			first_reset_dont_end_episode = False
 		# keep reading commands from client and do what it wants
 		#breakpoint()
 		try:
 			while self.need_to_run:
-				cmd_data_bytes = recv_data(conn)
-				if not cmd_data_bytes:
-					raise Exception("Client closed connection.")
-				command = json.loads(cmd_data_bytes.decode(self.encoding))
+				# If we have no command to process immediately, then wait until we receive one
+				if conn_obj["unhandled_act_cmd"] == None:
+					cmd_data_bytes = recv_data(conn)
+					if not cmd_data_bytes:
+						raise Exception("Client closed connection.")
+					command = json.loads(cmd_data_bytes.decode(self.encoding))
+				else: # otherwise proceed with what needs to be processed
+					command = conn_obj["unhandled_act_cmd"]
+					conn_obj["unhandled_act_cmd"] = None
 				print("incoming cmd: ", command)
 				# here we handle what the client wants exactly
 				if command.get("command") == "INIT":
 					self.initialize_connection(conn, command)
 				elif command.get("command") == "ACT":
-					reset = self.execute_action(conn, command)
-					if reset and task_completion_callback != None: # if episode was reset (e.g. completed, then we may want to notify the composite task process, if any)
-						task_completion_callback()
+					action_from_dreamer = command.get('action_bits', {"action": -1, "reset": True})
+					isStopAction = (action_from_dreamer["action"] == 3)
+					isReset = action_from_dreamer["reset"]
+					# if dreamer requested a reset, then let's keep that ACT command and stop the sequence here.
+					# we may want to give back control to this agent later, at which point we may need this resetting ACT command
+					if isReset and task_completion_callback != None:
+						# if episode was reset (e.g. completed, then we may want to notify the composite task process, if any)
+						# we may want to ignore first reset, because that may well be the start of the navigation task
+						if first_reset_dont_end_episode:
+							first_reset_dont_end_episode = False
+							reset = self.execute_action(conn, command)
+						else:
+							conn_obj["unhandled_act_cmd"] = command
+							self.callback_needs_calling_in_the_end = True
+							self.need_to_run = False
+							# Prepare episode stats for when we'll call the task completion
+							self.episode_stats = {
+								"local_step": self.step_count_since_start,
+								"steps_used": self.step_count_in_current_episode,
+								"habitat_id": self.habitat_id,
+								"bad_spot": self._bad_spot,
+								"have_arrived": str(bool(self.have_we_arrived(self.reward_close_enough))),
+								"path_start": self.path_start,
+								"path_dest": self.path_dest,
+								"astar_path": self.astar_path,
+								"travelled_path": self.travelled_path,
+								"chosen_actions": self.chosen_actions,
+							}
+					# actually execute the action
+					else:
+						reset = self.execute_action(conn, command)
 				elif command.get("command") == "NEXT_POINT":
 					if self.is_complex_behaviour: # only allow the first room centre find part to select a new location
-						if addr == "rc1":
-							self.load_next_start_point(how_to_handle_hab_pos_data=self.WhatToDoWithHabPosData.SEND_FRESH)
+						#if addr == "rc1":
+						#	self.load_next_start_point(how_to_handle_hab_pos_data=self.WhatToDoWithHabPosData.SEND_FRESH)
+						cur_pos = self.rnc.get_agent_pos_and_rotation()
+						self.send_habitat_and_pos_data(cur_pos, self.WhatToDoWithHabPosData.SEND_STORED)
 					else:
 						self.load_next_start_point(how_to_handle_hab_pos_data = self.WhatToDoWithHabPosData.SEND_FRESH)
 				elif command.get("command") == "GET_SAVED_HAB_AND_POS":
@@ -694,15 +787,20 @@ class RemoteEnv:
 					response = {"status": "OK"}
 					send_data(conn, json.dumps(response).encode(self.encoding))
 					continue
+			print("AE: Handler thread EXITING")
+			if self.callback_needs_calling_in_the_end:
+				task_completion_callback()
 		except Exception as e:
 			print(f"Error handling client {addr}: {e}")
-		finally:
 			self.close()
 			conn.close()
 			print(f"Connection with {addr} closed.")
+			self.need_to_run = False
+			print("AE: Handler thread EXITING DUE TO ERROR")
 
 	def set_agent_conn(self, agent_conn):
 		self.conn = agent_conn
+		#self.initialize_connection(self.conn)
 
 class ServerSocketMaster():
 	def __init__(self, host = '0.0.0.0', port = 9999, encoding = 'utf-8'):
@@ -725,14 +823,18 @@ class ServerSocketMaster():
 				if not cmd_data_bytes:
 					raise Exception("Client closed connection.")
 				command = json.loads(cmd_data_bytes.decode(self.encoding))
+				print("IN: ", command)
 				# here we handle what the client wants exactly
 				if command.get("command") == "INIT":
 					hab_id = command.get("hab_id", "1")
 					hab_set = command.get("hab_set", "train")
 					hab_min = command.get("hab_min", 0)
 					hab_max = command.get("hab_max", 9)
+					hab_set = "test"
+					hab_min = 873
+					hab_max = 999
 					env_type = command.get("env_type", "RoomCentreFinder")
-					agent_type = command.get("agent_type", "rc")
+					agent_type = command.get("agent_type", "")
 				elif command.get("command") == "KEEP":
 					response = {"status": "OK"}
 					send_data(conn, json.dumps(response).encode(self.encoding))
@@ -741,24 +843,15 @@ class ServerSocketMaster():
 					raise Exception("Client's first command was not INIT")
 
 				# Initialize AI2-THOR controller on the server
-				print(f"Initializing AI2-THOR for scene: {hab_set}[{hab_id}]...")
+				print(f"Initializing AI2-THOR for scene: {hab_set}[{hab_id}], at: {agent_type}, et: {env_type}...")
 				print("AI2-THOR initialized. Ready for actions.")
 
-				# Send initial READY response
-				response = {"status": "READY",
-							"scene": hab_set + "[" + str(hab_id) + "]",
-							# "reachable_positions": self.reachable_positions,
-							# "unreachable_postions": list(self.unreachable_postions),
-							# "full_grid": self.full_grid
-							}
-				send_data(conn, json.dumps(response).encode(self.encoding))
-
 				# Handle client connection in a new thread
-				if env_type == "RoomCentreFinder":
+				if agent_type == "" and env_type == "RoomCentreFinder":
 					env = RoomCentreFinder(encoding = self.encoding, conn = conn, hab_space=(hab_min, hab_max), hab_set = hab_set)
-				elif env_type == "DoorFinder":
+				elif agent_type == "" and env_type == "DoorFinder":
 					env = DoorFinder(encoding = self.encoding, conn = conn, hab_space=(hab_min, hab_max), hab_set = hab_set)
-				elif env_type == "ExploreTask":
+				elif agent_type == "rc" or agent_type == "dr":
 					# SO we want to do the exploration task. For that we will need to have two agents - rc for room centre
 					# and dr for door finding. We can create env if it doesn't exist, but we must make sure that we have
 					# both agents before we do anything
@@ -766,15 +859,14 @@ class ServerSocketMaster():
 						self.explore_env = ExploreTask(encoding = self.encoding, conn = conn, hab_space=(hab_min, hab_max), hab_set = hab_set)
 						env = self.explore_env # so that it can be added to the running_envs list
 						self.explore_env.prepare_and_setup()
-						self.explore_env.accept_agent(agent_conn=conn, agent_type=agent_type)
-					self.explore_env.accept_agent(agent_conn = conn, agent_type = agent_type)
+					self.explore_env.accept_agent(agent_conn = conn, agent_type = agent_type, first_cmd = command)
 				else:
 					raise Exception("Unknown Env type specified by client")
 
 				if env != None: self.running_envs.append(env) # env can be none, if we have ExploreTask and 2nd agent connects
 
 				# The activity thread will be started in the task manager for ExploreTask
-				if env_type in ["RoomCentreFinder", "DoorFinder"]:
+				if agent_type == "" and env_type in ["RoomCentreFinder", "DoorFinder"]:
 					client_thread = threading.Thread(target=env.handle_client, args=(conn, addr))
 					client_thread.start()
 				env = None
@@ -908,15 +1000,13 @@ class ExploreTask():
 	# 3) Finding the room centre of the new room
 
 	def __init__(self, *args, **kwargs):
-		self.rc_agent = None
-		self.dr_agent = None
 		#self.env_actions = actions
 		self.env_args = args
 		self.env_kw_args = kwargs
 
 		self.transitions = {
-			ExplorerTaskState.WAIT_FOR_AGENT1: ExplorerTaskState.WAIT_FOR_AGENT2,
-			ExplorerTaskState.WAIT_FOR_AGENT2: ExplorerTaskState.LAUNCH_ENV,
+			ExplorerTaskState.WAIT_FOR_AGENT1: ExplorerTaskState.LAUNCH_ENV,
+			#ExplorerTaskState.WAIT_FOR_AGENT2: ExplorerTaskState.LAUNCH_ENV,
 			ExplorerTaskState.LAUNCH_ENV: ExplorerTaskState.FIND_RC1,
 			ExplorerTaskState.FIND_RC1: ExplorerTaskState.WAIT_FOR_RC1,
 			ExplorerTaskState.WAIT_FOR_RC1: ExplorerTaskState.FIND_DOOR,
@@ -927,78 +1017,176 @@ class ExploreTask():
 			ExplorerTaskState.IDLE: ExplorerTaskState.WAIT_FOR_AGENT1,
 		}
 		self.current_state = ExplorerTaskState.IDLE
+		self.task_stats = {
+			"rc1": None,
+			"dr": None,
+			"rc2": None
+		}
+		self.task_cnt = 0
+
+		self.logdir = "task_log"
+		if not os.path.exists(self.logdir):
+			os.makedirs(self.logdir)
+
+		self.launch_remote_env()
+
+		self.all_conn = {
+			"rc": {
+				"conn": None,
+				"conn_cnt": 0,
+				"early_monitor": False,
+				"id": "rc",
+				"thread_launched": False,
+				"first_cmd": None,
+				"unhandled_act_cmd": None
+			},
+			"dr": {
+				"conn": None,
+				"conn_cnt": 0,
+				"early_monitor": False,
+				"id": "dr",
+				"thread_launched": False,
+				"first_cmd": None,
+				"unhandled_act_cmd": None
+			}
+		}
 
 	def task_complete(self):
 		print("STATE MACHINE: ", self.current_state, " => ", self.transitions[self.current_state])
+		if self.current_state == ExplorerTaskState.FIND_RC1:
+			# Do something else, because we don't want to start blocking receive. The agent already is waiting.
+			#self.all_conn["rc"]["early_monitor"] = True
 
-		# When we're waiting for agents, then we should only advance the state if the agent has connected
-		if self.current_state == ExplorerTaskState.WAIT_FOR_AGENT1:
-			if (self.rc_agent != None or self.dr_agent != None):
-				self.current_state = self.transitions[self.current_state]
-		elif self.current_state == ExplorerTaskState.WAIT_FOR_AGENT2:
-			if (self.rc_agent != None and self.dr_agent != None):
-				self.current_state = self.transitions[self.current_state]
-		else:
-			self.current_state = self.transitions[self.current_state]
+			# we have just finished finding room centre for the first time, store the episode stats for that
+			self.task_stats["rc1"] = self.re.episode_stats
+			self.re.episode_stats = {}
 
-		# if we got to the point where we need to launch an env, then do that as an internal task
-		if self.current_state == ExplorerTaskState.LAUNCH_ENV:
-			self.launch_remote_env()
-		elif self.current_state == ExplorerTaskState.FIND_RC1:
-			self.find_rc1()
-		elif self.current_state == ExplorerTaskState.FIND_DOOR:
 			self.find_door()
-		elif self.current_state == ExplorerTaskState.FIND_RC2:
+		elif self.current_state == ExplorerTaskState.FIND_DOOR:
+			# we have just finished finding the door, store the episode stats for that
+			self.task_stats["dr"] = self.re.episode_stats
+			self.re.episode_stats = {}
+
 			self.find_rc2()
-		elif self.current_state == ExplorerTaskState.IDLE:
-			print("EXPLORE TASK COMPLETE")
+		elif self.current_state == ExplorerTaskState.FIND_RC2:
+			self.task_cnt += 1
+			# we have just finished finding room centre for the 2nd time, store the episode stats for that
+			self.task_stats["rc2"] = self.re.episode_stats
+			self.re.episode_stats = {}
+
+			self.current_state = ExplorerTaskState.IDLE
+
+			with open(self.logdir + "/episode_data.jsonl", "a") as f:
+				f.write(json.dumps(self.task_stats) + "\n")
+
+			print("DONE, #", self.task_cnt)
+			self.task_stats = {
+				"rc1": None,
+				"dr": None,
+				"rc2": None
+			}
+			# load next starting point and repeat
+			self.re.load_next_start_point(how_to_handle_hab_pos_data=self.re.WhatToDoWithHabPosData.STORE)
+			self.find_rc1()
 
 	def find_rc1(self):
-		self.re.set_agent_conn(self.rc_agent)
-		client_thread = threading.Thread(target=self.re.handle_client, args=(self.rc_agent, "rc1", self.task_complete))
+		# first switch off early comms monitor before passing the control to the navigation class
+		self.all_conn["rc"]["early_monitor"] = False
+
+		self.re.set_agent_conn(self.all_conn["rc"]["conn"])
+		client_thread = threading.Thread(target=self.re.handle_client, args=(self.all_conn["rc"]["conn"], "rc1", self.task_complete, self.all_conn["rc"]))
 		client_thread.start()
-		self.task_complete()
+		#self.task_complete()
+		self.current_state = ExplorerTaskState.FIND_RC1
 
 	def find_rc2(self):
-		self.re.set_agent_conn(self.rc_agent)
-		client_thread = threading.Thread(target=self.re.handle_client, args=(self.rc_agent, "rc2", self.task_complete))
+		self.all_conn["rc"]["early_monitor"] = False
+
+		self.re.set_agent_conn(self.all_conn["rc"]["conn"])
+		client_thread = threading.Thread(target=self.re.handle_client, args=(self.all_conn["rc"]["conn"], "rc2", self.task_complete, self.all_conn["rc"]))
 		client_thread.start()
-		self.task_complete()
+		#self.task_complete()
+		self.current_state = ExplorerTaskState.FIND_RC2
 
 	def find_door(self):
-		self.re.set_agent_conn(self.dr_agent)
-		client_thread = threading.Thread(target=self.re.handle_client, args=(self.dr_agent, "dr", self.task_complete))
+		self.all_conn["dr"]["early_monitor"] = False
+
+		self.re.set_agent_conn(self.all_conn["dr"]["conn"])
+		client_thread = threading.Thread(target=self.re.handle_client, args=(self.all_conn["dr"]["conn"], "dr", self.task_complete, self.all_conn["dr"]))
 		client_thread.start()
-		self.task_complete()
+		#self.task_complete()
+		self.current_state = ExplorerTaskState.FIND_DOOR
 
-	def accept_agent(self, agent_conn, agent_type):
-		#assert(self.current_state == ExplorerTaskState.WAIT_FOR_AGENT1 or self.current_state == ExplorerTaskState.WAIT_FOR_AGENT2)
-		if agent_type == "rc":
-			#assert(self.rc_agent == None)
-			self.rc_agent = agent_conn
-			# If we're already finding room centre, then change agent connection for that finder
-			if self.current_state == ExplorerTaskState.FIND_RC1 or self.current_state == ExplorerTaskState.FIND_RC2:
-				self.re.set_agent_conn(self.rc_agent)
-		elif agent_type == "dr":
-			#assert (self.dr_agent == None)
-			self.dr_agent = agent_conn
-			if self.current_state == ExplorerTaskState.FIND_DOOR:
-				self.re.set_agent_conn(self.dr_agent)
-		else:
+	def accept_agent(self, agent_conn, agent_type, first_cmd = None):
+		if agent_type != "rc" and agent_type != "dr":
 			raise Exception("Unexpected agent type")
+		else:
+			self.all_conn[agent_type]["conn"] = agent_conn
+			self.all_conn[agent_type]["conn_cnt"] += 1
+			self.all_conn[agent_type]["first_cmd"] = first_cmd
 
-		# only advance the state machine if we got these commands when expected
-		if self.current_state == ExplorerTaskState.WAIT_FOR_AGENT1 or self.current_state == ExplorerTaskState.WAIT_FOR_AGENT2:
-			self.task_complete()
+			if not self.all_conn[agent_type]["thread_launched"]:
+				self.all_conn[agent_type]["thread_launched"] = True
+				self.all_conn[agent_type]["early_monitor"] = True
+				comms_handler_thread = threading.Thread(target=self.pre_work_comms_handler, args=(agent_type,))
+				comms_handler_thread.start()
+			elif not self.all_conn[agent_type]["early_monitor"]:
+				self.all_conn[agent_type]["early_monitor"] = True
+
+		print("AA: ", self.current_state, " rcc: ", self.all_conn["rc"]["conn_cnt"], " dfc: ", self.all_conn["dr"]["conn_cnt"])
 
 	def launch_remote_env(self):
 		#self.re = RemoteEnv(*self.env_args, **self.env_kw_args, behaviour_type = "complex")
 		self.re = RoomCentreFinder(*self.env_args, **self.env_kw_args, behaviour_type="complex")
-		self.task_complete()
+		self.re.load_next_start_point(how_to_handle_hab_pos_data=self.re.WhatToDoWithHabPosData.STORE)
+		#self.task_complete()
 
 	def prepare_and_setup(self):
-		assert (self.current_state == ExplorerTaskState.IDLE)
-		self.task_complete()
+		#assert (self.current_state == ExplorerTaskState.IDLE)
+		pass
+		#self.task_complete()
+
+	# This will handle the comms before we pass them to the Environment for sending observations and stuff.
+	# Before that happens, we have stuff like NEXT_POINT, INIT, HAB_AND_POS which needs to be heard and handled.
+	def pre_work_comms_handler(self, agent_type):
+		while True:
+			if self.all_conn[agent_type]["early_monitor"]: # if it wants monitoring, then doing that. We may not want it while doing navigation.
+				self.handle_single_comms_obj(self.all_conn[agent_type])
+				first_cmd = None
+			else:
+				time.sleep(0.01)
+
+	def handle_single_comms_obj(self, agent_conn):
+		try:
+			if agent_conn["first_cmd"] == None:
+				cmd_data_bytes = recv_data(agent_conn["conn"])
+				if not cmd_data_bytes:
+					raise Exception(f"Client closed connection [{agent_conn['id']}].")
+				command = json.loads(cmd_data_bytes.decode(self.re.encoding))
+			else:
+				command = agent_conn["first_cmd"]
+				agent_conn["first_cmd"] = None
+
+			print("IN2: ", command, " id: ", agent_conn['id'])
+			# here we handle what the client wants exactly
+			if command.get("command") == "INIT":
+				self.re.initialize_connection(agent_conn["conn"])
+			elif command.get("command") == "ACT":
+				#raise Exception(f"ACT command handled in wrong place {agent_conn['id']}")
+				print(f"{agent_conn['id']} Received ACT cmd, it can wait now until navigation starts")
+				agent_conn["unhandled_act_cmd"] = command
+				agent_conn["early_monitor"] = False
+				if agent_conn['id'] == "rc":
+					self.find_rc1()
+			elif command.get("command") == "NEXT_POINT":
+				self.re.send_habitat_and_pos_data(None, self.re.WhatToDoWithHabPosData.SEND_STORED, conn_to_use=agent_conn["conn"])
+			elif command.get("command") == "GET_SAVED_HAB_AND_POS":
+				self.re.send_habitat_and_pos_data(None, self.re.WhatToDoWithHabPosData.SEND_STORED, conn_to_use=agent_conn["conn"])
+		except Exception as e:
+			print(f"Error handling client3: {e}")
+			agent_conn["conn"].close()
+			agent_conn["early_monitor"] = False
+			print(f"Connection closed 4.")
 
 if __name__ == "__main__":
 	ssm = ServerSocketMaster()

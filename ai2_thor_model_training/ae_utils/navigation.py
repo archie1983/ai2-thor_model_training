@@ -558,7 +558,7 @@ class NavigationUtils:
             #print("Sel door size: ", door["axisAlignedBoundingBox"]["size"])
             #print("Sel door rotation: ", door["rotation"])
             #print("Sel door isOpen: ", door["isOpen"])
-            return Point(selected_target["pos"]["x"], selected_target["pos"]["z"])
+            return Point(selected_target["pos"]["x"], selected_target["pos"]["z"]), all_door_targets
         else:
             raise ValueError("No door found that can be navigated to")
 

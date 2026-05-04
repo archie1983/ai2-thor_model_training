@@ -545,9 +545,10 @@ class NavigationUtils:
         #print("same_room_visible: ", same_room_visible)
         #print("all_rooms_sorted_by_distance: ", all_rooms_sorted_by_distance)
 
-        if len(same_room_invisible) > 0:
-            selected_target = same_room_invisible[0]
-        elif len(same_room_visible) > 0:
+        #if len(same_room_invisible) > 0:
+        #    selected_target = same_room_invisible[0]
+        #el
+        if len(same_room_visible) > 0:
             selected_target = same_room_visible[0]
         elif len(all_rooms_sorted_by_distance) > 0:
             selected_target = all_rooms_sorted_by_distance[0]

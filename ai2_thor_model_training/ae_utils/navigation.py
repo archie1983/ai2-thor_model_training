@@ -372,6 +372,19 @@ class NavigationUtils:
         # return float("inf")
 
     ##
+    # Return a list of all doors that are visible
+    ##
+    def get_all_visible_doors(self, controller):
+        all_visible_doors = []
+        doors = get_objects_of_multiple_types(controller, ["Doorway", "Doorframe"])
+        for door in doors:
+            if not door["isOpen"]: continue
+            if door['visible']:
+                all_visible_doors.append(door)
+
+        return all_visible_doors
+
+    ##
     # Finds the next door to navigate to given the current position
     # extend_path: A flag of whether we want to extend the path so that we go through the door.
     ##

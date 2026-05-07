@@ -4,7 +4,7 @@ from enum import Enum
 from . import (get_room_poly_by_room_id, room_this_point_belongs_to, get_centre_of_the_room,
                get_objects_of_multiple_types, is_point_inside_room_ground_truth, euclidean_dist)
 from shapely.geometry import Point
-import math
+import math, time
 
 ##
 # Very similar to thortils.math.roundany, but specifying the significant figures in the final value
@@ -418,6 +418,8 @@ class NavigationUtils:
         all_door_targets = []
         selected_target = None
 
+        time_diffs_pc = []
+        time_diffs_pc2 = []
         # print(doors[0])
         for door in doors:
             # find the centre of the door because we will want to arrive at the centre of the door, not the edge of
@@ -440,11 +442,14 @@ class NavigationUtils:
 
             # the distance to that point as A* goes
             try:
+                t1 = time.time()
                 door_path_length = self.get_path_cost_to_target_point(cur_pos,
                                                                       target_position_point,
                                                                       reachable_positions,
                                                                       close_enough = close_enough,
                                                                       step = step)
+                t2 = time.time()
+                time_diffs_pc.append(round(t2-t1,4))
                 if extend_path:
                     # This is what we do now:
                     # Retrieve the path to this door. If path length is equal or less than 1, then drop it and ignore
@@ -516,12 +521,14 @@ class NavigationUtils:
                     target_position = {"x": new_point_target.x, "y": door_center_pos['y'],
                                        "z": new_point_target.y}
 
+                    t1 = time.time()
                     door_path_length = self.get_path_cost_to_target_point(cur_pos,
                                                                           new_point_target,
                                                                           reachable_positions,
                                                                           close_enough = close_enough,
                                                                           step = step)
-
+                    t2 = time.time()
+                    time_diffs_pc2.append(round(t2-t1,4))
                 #room_coming_from = room_this_point_belongs_to(rooms_in_habitat, [path[-2][0], "", path[-2][1]])
                 #print("room_coming_from: ", room_coming_from)
                 #print(door)
@@ -553,6 +560,8 @@ class NavigationUtils:
         same_room_invisible = sorted(same_room_invisible, key=lambda room_tuple: room_tuple["distance"])
         same_room_visible = sorted(same_room_visible, key=lambda room_tuple: room_tuple["distance"])
         all_rooms_sorted_by_distance = sorted(all_door_targets, key=lambda room_tuple: room_tuple["distance"])
+
+        print("AE: time_diffs_pc = ", time_diffs_pc, " sum = ", sum(time_diffs_pc), " time_diffs_pc2 = ", time_diffs_pc2, " sum = ", sum(time_diffs_pc))
 
         #print("same_room_invisible: ", same_room_invisible)
         #print("same_room_visible: ", same_room_visible)

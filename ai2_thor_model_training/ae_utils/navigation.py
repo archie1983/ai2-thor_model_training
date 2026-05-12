@@ -445,6 +445,7 @@ class NavigationUtils:
                                                                       reachable_positions,
                                                                       close_enough = close_enough,
                                                                       step = step)
+                #print("initial door: ", door_path_length, target_position_point)
                 if extend_path:
                     # This is what we do now:
                     # Retrieve the path to this door. If path length is equal or less than 1, then drop it and ignore
@@ -479,11 +480,19 @@ class NavigationUtils:
                     # polygons of both rooms
                     room1_poly = get_room_poly_by_room_id(habitat, room1_id)
                     room2_poly = get_room_poly_by_room_id(habitat, room2_id)
+
+                    # if no room polygons either side of the door are the current room polygons, then we're not looking
+                    # at a door that connects our current room to another.
+                    if room_of_placement[1] != room1_poly and room_of_placement[1] != room2_poly:
+                        #continue
+                        raise ValueError("Irrelevant door")
+
+                    #p_start_point = Point(point_for_room_search
                     # Which room are we coming from and which one are we going to?
-                    if is_point_inside_room_ground_truth((path_last_point[0], "", path_last_point[1]), room1_poly):
+                    if is_point_inside_room_ground_truth(point_for_room_search, room1_poly):
                         room_coming_from = room1_poly
                         room_going_to = room2_poly
-                    elif is_point_inside_room_ground_truth((path_last_point[0], "", path_last_point[1]), room2_poly):
+                    elif is_point_inside_room_ground_truth(point_for_room_search, room2_poly):
                         room_coming_from = room2_poly
                         room_going_to = room1_poly
                     else:
@@ -521,7 +530,7 @@ class NavigationUtils:
                                                                           reachable_positions,
                                                                           close_enough = close_enough,
                                                                           step = step)
-
+                #print("updated door: ", door_path_length, new_point_target)
                 #room_coming_from = room_this_point_belongs_to(rooms_in_habitat, [path[-2][0], "", path[-2][1]])
                 #print("room_coming_from: ", room_coming_from)
                 #print(door)

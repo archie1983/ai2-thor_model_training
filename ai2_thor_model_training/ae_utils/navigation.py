@@ -485,11 +485,17 @@ class NavigationUtils:
                         room1_poly = get_room_poly_by_room_id(habitat, room1_id)
                         room2_poly = get_room_poly_by_room_id(habitat, room2_id)
                         # Which room are we coming from and which one are we going to?
-                        if is_point_inside_room_ground_truth((current_point_and_rtn[0], "", current_point_and_rtn[1]), room1_poly):
+
+                        # if no room polygons either side of the door are the current room polygons, then we're not looking
+                        # at a door that connects our current room to another.
+                        if room_of_placement[1] != room1_poly and room_of_placement[1] != room2_poly:
+                            # continue
+                            raise ValueError("Irrelevant door")
+
+                        if is_point_inside_room_ground_truth(point_for_room_search, room1_poly):
                             room_coming_from = room1_poly
                             room_going_to = room2_poly
-                        elif is_point_inside_room_ground_truth((current_point_and_rtn[0], "", current_point_and_rtn[1]),
-                                                               room2_poly):
+                        elif is_point_inside_room_ground_truth(point_for_room_search, room2_poly):
                             room_coming_from = room2_poly
                             room_going_to = room1_poly
                         else:

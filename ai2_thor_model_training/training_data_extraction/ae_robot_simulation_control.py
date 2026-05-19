@@ -29,8 +29,21 @@ from ai2_thor_model_training.ae_utils import (get_path_length, convert_pose_set2
 # This has NOT yet got the LLM connected, but merely a set of tools to move the robot and to interact
 # with the simulation environment.
 class RobotNavigationControl:
-    is_DEBUG = False
-    NUM_ANGLES = 3 # how many angles we want to capture from each location along the path
+    ##
+    # pic_angles: how many angles we want to capture from each location along the path
+    # is_debug: print debug messages or not
+    # harvest_items: Whether we want to get items segmented in the image and their bounding boxes (e.g. for YOLO training)
+    ##
+    def __init__(self, is_debug = False, pic_angles = 3, harvest_items = False):
+        self.is_DEBUG = is_debug
+        self.NUM_ANGLES = pic_angles
+        self.harvest_items = harvest_items
+
+        self.classes_for_yolo_finetune = ["door", "DoorWay", "window", "Sofa", "Desk", "DiningTable", "Fridge",
+                       "Warderobe", "TVStand", "ShelvingUnit", "Bed", "Television",
+                       "GarbageCan", "Painting"]
+
+        self.classes_for_yolo_finetune = [lbl.upper() for lbl in self.classes_for_yolo_finetune]
 
     # Set a controller for the robot navigation control to use so that it
     # can interact with the AI2-THOR environment
@@ -72,6 +85,7 @@ class RobotNavigationControl:
             gridSize=0.25,
             snapToGrid=True,
             #rotateStepDegrees=15,
+            renderInstanceSegmentation=self.harvest_items
         )
 
         # If debug is enabled, then print scene name and a few other things.
@@ -269,11 +283,54 @@ class RobotNavigationControl:
         #self.controller.step(action="TeleportFull", **position, rotation=rotation['y'])
         self.controller.step(action="Teleport", position=position, rotation=rotation)
         #plot_frames(self.controller.last_event)
+        self.get_items_and_their_boxes(self.controller.last_event)
         img_uri = self.mapper.get_front_view()
         img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
         img_uris = [img_uri]
         img_uris.extend(img_uri_sides)
         return img_uris
+
+    def get_items_and_their_boxes(self, event):
+        if self.harvest_items:
+            class_detections = event.class_detections2D
+            instance_detections2D = event.instance_detections2D
+            #print(class_detections)
+            i = 0
+
+            #for cd in class_detections: print("CD: ", cd)
+            #for id in instance_detections2D: print("ID: ", id)
+
+            # filter out the detected classes, leaving only the classes that we want to know about
+            interesting_detections = [(k, v) for k, v in event.class_detections2D.items() if k.upper() in self.classes_for_yolo_finetune]
+
+            annotations = []
+            for item_lbl, item_boxes in interesting_detections:
+                print("IB: ", item_boxes)
+
+                # Convert AI2-THOR box format [x1, y1, x2, y2] to YOLO format
+                # YOLO expects: [center_x, center_y, width, height] normalized to [0,1]
+                item_annotations = []
+                img = event.cv2img
+                h, w = img.shape[:2]
+
+                for box in item_boxes:
+                    x1, y1, x2, y2 = box
+
+                    # Convert to YOLO format
+                    center_x = ((x1 + x2) / 2) / w
+                    center_y = ((y1 + y2) / 2) / h
+                    width = (x2 - x1) / w
+                    height = (y2 - y1) / h
+
+                    item_annotations.append([0, center_x, center_y, width, height])  # class 0 = door
+
+                with open(f"door_dataset/labels/train/img_{i:04d}.txt", "w") as f:
+                    for ann in item_annotations:
+                        f.write(f"{ann[0]} {ann[1]:.6f} {ann[2]:.6f} {ann[3]:.6f} {ann[4]:.6f}\n")
+
+                annotations.append(item_annotations)
+                #print(f"Collected image {i} with {len(item_boxes)} items")
+
 
     ##
     # We may not always want the full URI from self.mapper.get_target_dir(), we may

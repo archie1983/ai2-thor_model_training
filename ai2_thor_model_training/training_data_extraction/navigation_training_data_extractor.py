@@ -35,12 +35,13 @@ from ai2_thor_model_training.ae_utils import (RoomType, get_rooms_ground_truth,
 # the navigation diffuser).
 ##
 class NavigationTrainingDataExtractor:
-    def __init__(self, data_store_dir = "harvested_data"):
+    def __init__(self, data_store_dir = "harvested_data", harvest_items = False):
         self.HABITAT_SET_PREFIX = "train" # "val" "test"
         self.data_store_dir = data_store_dir
         self.dataset = None
         self.controller = None
-        self.rnc = RobotNavigationControl()
+        self.harvest_items = harvest_items
+        self.rnc = RobotNavigationControl(pic_angles=3, is_debug=False, harvest_items = self.harvest_items)
 
         self.last_start_position = None
         self.last_goal_position = None
@@ -113,7 +114,11 @@ class NavigationTrainingDataExtractor:
         self.habitat_mgmt.start_habitat(habitat_id)
 
         if (self.controller == None):
-            self.controller = launch_controller({"scene": habitat, "VISIBILITY_DISTANCE": 3.0, "headless": False})
+            self.controller = launch_controller({"scene": habitat,
+                                                 "VISIBILITY_DISTANCE": 3.0,
+                                                 "headless": False,
+                                                 "RENDER_INSTANCE_SEGMENTATION": self.harvest_items})
+
             self.rnc.set_controller(self.controller) # This allows our control scripts to interact with AI2-THOR environment
             self.mapper = Mapper3D(self.controller)
             self.rnc.set_mapper3D(self.mapper) # This allows taking FPV pictures of robot

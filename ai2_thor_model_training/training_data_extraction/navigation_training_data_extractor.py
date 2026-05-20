@@ -279,6 +279,10 @@ class NavigationTrainingDataExtractor:
 
             # We've just been put in a random place in a habitat. We want to move now to where we want to go,
             # e.g., middle of the room, a door, etc.. For that we need to plan a path to there.
+            # This path planning will only be done to validate the plan. For historic compatibility
+            # reasons, at least for now, we will be planning another path using a different function,
+            # and use that to actually navigate: path_and_plan = self.get_path_to_target_point(self.current_target_point)
+            # This can definitely be optimized, but that's for another day.
             try:
                 point_for_room_search = (p[0], "", p[1])
                 self.current_target_point = self.choose_target_point(place_with_rtn,

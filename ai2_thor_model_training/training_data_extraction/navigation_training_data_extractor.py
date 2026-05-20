@@ -58,8 +58,8 @@ class NavigationTrainingDataExtractor:
         self.last_goal_position = None
         self.rooms_in_habitat = None
 
-        self.NUMBER_OF_HABITATS_IN_BATCH = 2 # 55 # how many habitats in one go do we want to explore
-        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 2 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
+        self.NUMBER_OF_HABITATS_IN_BATCH = 1000 # 55 # how many habitats in one go do we want to explore
+        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 100 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
         self.valid_targets = ["RoomCentre", "Door"]
         self.current_target = self.valid_targets[1]
 
@@ -256,19 +256,19 @@ class NavigationTrainingDataExtractor:
         placements = sep_spatial_sample(self.reachable_positions, sep, num_stops,
                                         rnd=rnd)
 
-        print(placements)
+        #print(placements)
 
         explorations_processed = 0
         # Choose one placement in the set of placements and then plan path from that placement to
         # the middle of the room. If planning path is not possible, then choose another one.
-        path_planned = False
         placement_attempts = 0
-        while not path_planned:
+        while explorations_processed < len(placements):
             placement_attempts += 1
             # els = elements.Space(np.int32, (), 0, len(placements))
             # p = list(placements)[int(els.sample())]
-            el_ndx = rnd.randrange(0, len(placements))
-            p = list(placements)[el_ndx]
+            #el_ndx = rnd.randrange(0, len(placements))
+            #p = list(placements)[el_ndx]
+            p = list(placements)[explorations_processed]
 
             # append a rotation to the place.
             yaw = rnd.sample(h_angles, 1)[0]

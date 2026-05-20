@@ -131,8 +131,8 @@ class NavigationTrainingDataExtractor:
                                                  "VISIBILITY_DISTANCE": 3.0,
                                                  "headless": False,
                                                  "RENDER_INSTANCE_SEGMENTATION": self.harvest_items,
-                                                 #"IMAGE_WIDTH": 64,
-                                                 #"IMAGE_HEIGHT": 64,
+                                                 "IMAGE_WIDTH": 640,
+                                                 "IMAGE_HEIGHT": 480,
                                                  "GRID_SIZE": self.grid_size,
                                                  #"GPU_DEVICE": 1,
                                                  })

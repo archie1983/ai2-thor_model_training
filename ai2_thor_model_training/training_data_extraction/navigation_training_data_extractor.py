@@ -59,7 +59,7 @@ class NavigationTrainingDataExtractor:
         self.rooms_in_habitat = None
 
         self.NUMBER_OF_HABITATS_IN_BATCH = 1000 # 55 # how many habitats in one go do we want to explore
-        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 100 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
+        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 10 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
         self.valid_targets = ["RoomCentre", "Door"]
         self.current_target = self.valid_targets[1]
 
@@ -588,6 +588,8 @@ class NavigationTrainingDataExtractor:
             plt.show()
         else:
             plt.savefig(self.habitat_mgmt.get_current_top_view_fname())
+
+        plt.close()
 
     ##
     # A way to tell if we're running in jupyter or not

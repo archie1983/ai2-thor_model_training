@@ -12,3 +12,4 @@ from .ai2_thor_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
 from .navigation import NavigationUtils
 
 from .connection import (recv_data, send_data)
+from .yolo_utils import YoloUtils

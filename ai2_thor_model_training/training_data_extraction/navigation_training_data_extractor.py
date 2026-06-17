@@ -24,7 +24,7 @@ import numpy as np
 
 from PIL import Image
 import copy
-from ai2_thor_model_training.ae_utils import (RoomType, get_rooms_ground_truth,
+from ai2_thor_model_training.ae_utils import (NavigationUtils, RoomType, get_rooms_ground_truth,
                             get_visible_objects_from_collection,
                             get_all_objects, get_all_objects_of_type,
                             get_path_length, get_centre_of_the_room,
@@ -35,20 +35,33 @@ from ai2_thor_model_training.ae_utils import (RoomType, get_rooms_ground_truth,
 # the navigation diffuser).
 ##
 class NavigationTrainingDataExtractor:
-    def __init__(self, data_store_dir = "harvested_data"):
+    def __init__(self, data_store_dir = "harvested_data", harvest_items = False):
         self.HABITAT_SET_PREFIX = "train" # "val" "test"
         self.data_store_dir = data_store_dir
         self.dataset = None
         self.controller = None
-        self.rnc = RobotNavigationControl()
+        self.harvest_items = harvest_items
+        self.grid_size = 0.125
+        self.plan_close_enough = 0.25
+        self.habitat = None
+        self.reachable_positions = None
+
+        self.habitat_mgmt = NavigationTrainingDataManagement(data_store_dir=self.data_store_dir,
+                                                             collect_yolo_data=self.harvest_items,
+                                                             train_val_test=self.HABITAT_SET_PREFIX)
+
+        self.rnc = RobotNavigationControl(pic_angles=3, is_debug=False, harvest_items=self.harvest_items, data_manager=self.habitat_mgmt)
+
+        self.nu = NavigationUtils(step=self.grid_size)
 
         self.last_start_position = None
         self.last_goal_position = None
         self.rooms_in_habitat = None
 
-        self.habitat_mgmt = NavigationTrainingDataManagement(self.data_store_dir)
-        self.NUMBER_OF_HABITATS_IN_BATCH = 2 # 55 # how many habitats in one go do we want to explore
-        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 2 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
+        self.NUMBER_OF_HABITATS_IN_BATCH = 1000 # 55 # how many habitats in one go do we want to explore
+        self.NUMBER_OF_EXPLORATIONS_PER_HABITAT = 10 # insane number - we're never going to get 1000, but this way it ensures that we get all there is
+        self.valid_targets = ["RoomCentre", "Door"]
+        self.current_target = self.valid_targets[1]
 
         ## figure out where are we running- in terminal or jupyter
         if not self.is_running_in_jupyter():
@@ -111,9 +124,19 @@ class NavigationTrainingDataExtractor:
     def ae_process_proctor_habitat(self, habitat, habitat_id):
 
         self.habitat_mgmt.start_habitat(habitat_id)
+        self.habitat = habitat
 
         if (self.controller == None):
-            self.controller = launch_controller({"scene": habitat, "VISIBILITY_DISTANCE": 3.0, "headless": False})
+            self.controller = launch_controller({"scene": habitat,
+                                                 "VISIBILITY_DISTANCE": 3.0,
+                                                 "headless": False,
+                                                 "RENDER_INSTANCE_SEGMENTATION": self.harvest_items,
+                                                 "IMAGE_WIDTH": 640,
+                                                 "IMAGE_HEIGHT": 480,
+                                                 "GRID_SIZE": self.grid_size,
+                                                 #"GPU_DEVICE": 1,
+                                                 })
+
             self.rnc.set_controller(self.controller) # This allows our control scripts to interact with AI2-THOR environment
             self.mapper = Mapper3D(self.controller)
             self.rnc.set_mapper3D(self.mapper) # This allows taking FPV pictures of robot
@@ -125,6 +148,83 @@ class NavigationTrainingDataExtractor:
 
         self.do_all_habitat_explorations()
         self.habitat_mgmt.end_habitat()
+
+    def create_rnd_object(self):
+        seed = 1983
+        if not hasattr(self, "rnd"):
+            self.rnd = random.Random(seed)
+        return self.rnd
+
+    def choose_target_point(self, place_with_rtn = None, place_with_no_rtn = None):
+        try:
+            ## looking for a room centre
+            if self.current_target == self.valid_targets[0]:
+                return self.find_room_centre_target(place_with_no_rtn)
+            elif self.current_target == self.valid_targets[1]: ## looking for a suitable door
+                target_point, self.all_door_targets = self.choose_door_target(place_with_rtn)
+                return target_point
+        except ValueError as e:
+            raise e
+    ##
+    # Finds the centre of the current room given the current position and the rooms in habitat.
+    ##
+    def find_room_centre_target(self, point_for_room_search):
+        #print("FRC1")
+        # We've just been put in a random place in a habitat. We want to move now to where we want to go,
+        # e.g., middle of the room, a door, etc.. For that we need to plan a path to there.
+        room_of_placement = room_this_point_belongs_to(self.rooms_in_habitat, point_for_room_search)
+
+        if (room_of_placement == None): raise ValueError("Room of placement not identifiable")
+
+        room_centre = room_of_placement[2]
+        #print("FRC2")
+        return room_centre
+
+    ##
+    # Go through all the doors and find the most appropriate as a target, then add a little bit extra so that
+    # we end up going through the door.
+    # place_with_rtn: Place with rotation, e.g.: (6.62, 6.25, 180)
+    ##
+    def choose_door_target(self, place_with_rtn):
+        #print("CD1")
+        current_target_point = None
+
+        current_target_point, all_door_targets = self.nu.find_door_target(place_with_rtn,
+                                                        self.rooms_in_habitat,
+                                                        self.reachable_positions,
+                                                        self.habitat,
+                                                        self.controller, close_enough=self.plan_close_enough,
+                                                        step=self.grid_size, extend_path=True)
+
+        # t1 = time.time()
+        # pose = ((place_with_rtn[0], 0.0, place_with_rtn[1]),
+        #         (0.0, place_with_rtn[2], 0.0))  # place_with_rtn in AI2-Thor format
+        # path_length = self.nu.get_path_cost_to_target_point(pose,
+        #                                                     current_target_point,
+        #                                                     self.reachable_positions,
+        #                                                     close_enough=self.plan_close_enough,
+        #                                                     step=self.grid_size)
+
+        # if we've been successful so far, then we can now look up room type
+        trg_pos_xy = (current_target_point.x, "", current_target_point.y)
+        self.target_room = room_this_point_belongs_to(self.rooms_in_habitat, trg_pos_xy)
+        # print("AE: path plan time: ", (time.time() - t1))
+
+        if (self.target_room == None):
+            raise ValueError("Target room not identifiable")
+
+        if current_target_point == None:
+            raise ValueError("No suitable doors were found")
+
+        # print("AE: Path Length: ", path_length)
+        #(cur_path, reachable_positions, start, dest) = self.nu.get_last_path_and_params()
+        # print("AE: Path: ", cur_path)
+        # atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
+        #                    show_unreachable_pos=False,
+        #                    show_reachable_pos=False)
+        # atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
+        #print("CD2")
+        return current_target_point, all_door_targets
 
     # Generate all random points that we want to generate and navigate from there
     # to whatever target we want (door, or middle of room, or whatever)
@@ -145,33 +245,70 @@ class NavigationTrainingDataExtractor:
 
         kwargs: See thortils.vision.projection.open3d_pcd_from_rgbd;
         """
-        rnd = random.Random(seed)
-
+        rnd = self.create_rnd_object()
         initial_agent_pose = tt.thor_agent_pose(self.controller)
         initial_horizon = tt.thor_camera_horizon(self.controller.last_event)
 
-        reachable_positions = tt.thor_reachable_positions(self.controller)
-        placements = sep_spatial_sample(reachable_positions, sep, num_stops,
+        self.reachable_positions = [
+            tuple(map(lambda x: round(roundany(x, self.grid_size), 2), pos))
+            for pos in thor_reachable_positions(self.controller)]
+
+        placements = sep_spatial_sample(self.reachable_positions, sep, num_stops,
                                         rnd=rnd)
 
-        print(placements)
+        #print(placements)
 
         explorations_processed = 0
-        for p in placements:
+        # Choose one placement in the set of placements and then plan path from that placement to
+        # the middle of the room. If planning path is not possible, then choose another one.
+        placement_attempts = 0
+        while explorations_processed < len(placements):
+            placement_attempts += 1
+            # els = elements.Space(np.int32, (), 0, len(placements))
+            # p = list(placements)[int(els.sample())]
+            #el_ndx = rnd.randrange(0, len(placements))
+            #p = list(placements)[el_ndx]
+            p = list(placements)[explorations_processed]
+
             # append a rotation to the place.
             yaw = rnd.sample(h_angles, 1)[0]
             place_with_rtn = p + (yaw,)
 
-            point_for_room_search = (p[0], "", p[1])
-
-            room_of_placement = room_this_point_belongs_to(self.rooms_in_habitat, point_for_room_search)
-            room_centre = room_of_placement[2]
-            print("Placement: ", place_with_rtn)
-            print("ROOM of placement: ", room_of_placement)
-            print("Turn: ", angle_to_turn_to_face_p2_from_p1(p, (room_centre.x, room_centre.y)))
-
             ## Teleport, then start new exploration. Achieve goal. Then repeat.
             self.rnc.teleport_to(place_with_rtn)
+
+            # We've just been put in a random place in a habitat. We want to move now to where we want to go,
+            # e.g., middle of the room, a door, etc.. For that we need to plan a path to there.
+            # This path planning will only be done to validate the plan. For historic compatibility
+            # reasons, at least for now, we will be planning another path using a different function,
+            # and use that to actually navigate: path_and_plan = self.get_path_to_target_point(self.current_target_point)
+            # This can definitely be optimized, but that's for another day.
+            try:
+                point_for_room_search = (p[0], "", p[1])
+                self.current_target_point = self.choose_target_point(place_with_rtn,
+                                                                     point_for_room_search)  # self.target_room will be set in this function
+
+                cur_pos = self.rnc.get_agent_pos_and_rotation()
+                # print("Placement: ", place_with_rtn, " cur_pos: ", cur_pos, " el_ndx: ", el_ndx)
+                self.initial_path_length = self.nu.get_path_cost_to_target_point(cur_pos,
+                                                                                 self.current_target_point,
+                                                                                 self.reachable_positions,
+                                                                                 close_enough=self.plan_close_enough,
+                                                                                 step=self.grid_size)
+
+                # Now let's remember the A* path- we will want it for results.
+                (self.astar_path, _, self.path_start, self.path_dest) = self.nu.get_last_path_and_params()
+                # print("AE: Path: ", self.astar_path)
+            except ValueError as e:
+                # If the path could not be planned, then drop it and carry on with the next one
+                # print(f"ERROR: {e}")
+                if placement_attempts <= 10:
+                    print('.', sep='', end='')
+                    continue
+                else:
+                    # If we have tried for 10 times already, then give up with this habitat
+                    print("next_hab", sep="", end="")
+                    break
 
             # Start new exploration data storage
             habitat_data_store = self.habitat_mgmt.start_new_exploration() # get the directory for the new exploration.
@@ -179,11 +316,17 @@ class NavigationTrainingDataExtractor:
 
             # Now plan path to the centre of the room
             try:
-                path_and_plan = self.get_path_to_target_point(room_centre)
+                path_and_plan = self.get_path_to_target_point(self.current_target_point)
             except ValueError as e:
                 # If the path could not be planned, then drop it and carry on with the next one
                 print(f"ERROR: {e}")
-                continue
+                if placement_attempts <= 10:
+                    print('.', sep='', end='')
+                    continue
+                else:
+                    # If we have tried for 10 times already, then give up with this habitat
+                    print("next_hab", sep="", end="")
+                    break
 
             #print("PATH & PLAN: ", path_and_plan)
             path = path_and_plan[0]
@@ -193,7 +336,7 @@ class NavigationTrainingDataExtractor:
             self.visualise_path(path)
 
             # Walk through the plan
-            self.rnc.follow_planned_path(path, plan, self.habitat_mgmt)
+            self.rnc.follow_planned_path(path, plan)
 
             # close off current exploration
             self.habitat_mgmt.end_current_exploration()
@@ -446,6 +589,8 @@ class NavigationTrainingDataExtractor:
         else:
             plt.savefig(self.habitat_mgmt.get_current_top_view_fname())
 
+        plt.close()
+
     ##
     # A way to tell if we're running in jupyter or not
     # If in jupyter, we might want to show matplotlibs,
@@ -491,13 +636,13 @@ class NavigationTrainingDataExtractor:
         while processed_habitats_in_this_batch < self.NUMBER_OF_HABITATS_IN_BATCH:
 
             habitat_id = highest_habitat_index + 1 + processed_habitats_in_this_batch
-            habitat = self.ae_load_proctor_habitat(habitat_id)
+            self.habitat = self.ae_load_proctor_habitat(habitat_id)
             processed_habitats_in_this_batch += 1
 
-            if not habitat:
+            if not self.habitat:
                 continue
 
-            self.ae_process_proctor_habitat(habitat, habitat_id)
+            self.ae_process_proctor_habitat(self.habitat, habitat_id)
 
         print(np.mean(self.room_cnts), np.median(self.room_cnts))
         print(self.room_cnts)

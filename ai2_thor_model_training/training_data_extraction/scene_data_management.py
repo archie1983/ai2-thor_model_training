@@ -1,14 +1,17 @@
 from enum import Enum
 import glob, os, shutil, pickle
 from . import DataLoadError
+from pathlib import Path
 
 ##
 # NavigationTrainingDataManagement class. It will deal with managing data files
 # that are relevant to a particular habitat and training data extraction from it.
 ##
 class NavigationTrainingDataManagement():
-    def __init__(self, data_store_dir):
+    def __init__(self, data_store_dir = "", collect_yolo_data = False, train_val_test = "train"):
         self.data_store_dir = data_store_dir
+        self.collect_yolo_data = collect_yolo_data
+        self.yolo_data_dir = self.data_store_dir + "/yolo"
         self.staging_dir_name = "staging"
         self.data_dir_prefix = "/h_"
         self.pkl_file_prefix = "/hm_"
@@ -24,6 +27,29 @@ class NavigationTrainingDataManagement():
         # It shouldn't exist. If it does, then that's because of a failed run, delete it.
         if os.path.exists(self.current_staging_dir):
             shutil.rmtree(self.current_staging_dir)
+
+        if self.collect_yolo_data:
+            # check that we're collection train, test or val data
+            if not train_val_test in ["train", "val", "test"]:
+                raise DataLoadError(
+                    "When collecting data for YOLO finetune, it has to be one of: 'train', 'val' or 'test' data.")
+
+            # Create the directory where to store YOLO finetuning data if it doesn't exist.
+            root = Path(self.yolo_data_dir)
+            output_dirs = {
+                "images_tr": root / "images" / "train",
+                "images_v": root / "images" / "val",
+                "images_te": root / "images" / "test",
+                "labels_tr": root / "labels" / "train",
+                "labels_v": root / "labels" / "val",
+                "labels_te": root / "labels" / "test",
+            }
+            for d in output_dirs.values():
+                d.mkdir(parents=True, exist_ok=True)
+
+            self.yolo_img_dir = root / "images" / train_val_test
+            self.yolo_lbl_dir = root / "labels" / train_val_test
+
 
     # Prepare for a new habitat exploration
     def start_habitat(self, habitat_id):
@@ -57,6 +83,27 @@ class NavigationTrainingDataManagement():
 
         # store our data collection into a pickle file
         pickle.dump(self.habitat_metrics_data, open(self.current_metrics_store_fname, "wb"))
+
+        if self.collect_yolo_data:
+            #self.yolo_img_dir = root / "images" / train_val_test
+            #self.yolo_lbl_dir = root / "labels" / train_val_test
+            # print("===============================================================================================")
+            # print(self.habitat_metrics_data)
+            # print("===============================================================================================")
+            for exploration in self.habitat_metrics_data:
+                expl_len, expl_data = exploration
+                for expl_step in expl_data:
+                    pos, act, remaining_len, all_img_data = expl_step
+                    for img_data in all_img_data:
+                        img_path, yolo_annotations = img_data
+                        if len(yolo_annotations) > 0:
+                            new_img_name = self.data_dir_prefix + str(self.habitat_id) + "_" + img_path.replace("/", "_")
+                            copy_cmd = "cp " + self.current_final_habitat_dir + "/" + img_path + " " + str(self.yolo_img_dir) + new_img_name
+                            os.popen(copy_cmd)
+                            #print(copy_cmd)
+                            label_path = str(self.yolo_lbl_dir) + new_img_name.replace(".png", ".txt")
+                            with open(label_path, "w") as f:
+                                f.write("\n".join(yolo_annotations))
 
 
     # Starts a new exploration in the current habitat

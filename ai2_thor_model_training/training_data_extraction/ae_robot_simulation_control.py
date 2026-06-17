@@ -7,6 +7,7 @@ import time, os, cv2
 import math
 from typing import Dict, List
 from PIL import Image
+from pathlib import Path
 
 from ai2thor.controller import Controller
 from ai2thor_colab import (
@@ -23,14 +24,26 @@ from thortils.agent import thor_teleport2d
 from thortils.controller import _resolve
 from thortils.agent import thor_agent_pose, thor_pose_as_tuple
 
-from ai2_thor_model_training.ae_utils import (get_path_length, convert_pose_set2tuple, normalize_colors, NavigationUtils)
+from ai2_thor_model_training.ae_utils import (get_path_length, convert_pose_set2tuple, normalize_colors, NavigationUtils, YoloUtils)
 
 # Class for controlling robot navigation. This is where we will have all the navigation commands.
 # This has NOT yet got the LLM connected, but merely a set of tools to move the robot and to interact
 # with the simulation environment.
 class RobotNavigationControl:
-    is_DEBUG = False
-    NUM_ANGLES = 3 # how many angles we want to capture from each location along the path
+    ##
+    # pic_angles: how many angles we want to capture from each location along the path
+    # is_debug: print debug messages or not
+    # harvest_items: Whether we want to get items segmented in the image and their bounding boxes (e.g. for YOLO training)
+    ##
+    def __init__(self, is_debug = False, pic_angles = 3, harvest_items = False, data_manager = None):
+        self.is_DEBUG = is_debug
+        self.NUM_ANGLES = pic_angles
+        self.harvest_items = harvest_items
+        self.habitat_mgmt = data_manager
+        if self.harvest_items:
+            self.yu = YoloUtils()
+            if self.habitat_mgmt is not None:
+                self.yu.write_yaml(Path(self.habitat_mgmt.yolo_data_dir))
 
     # Set a controller for the robot navigation control to use so that it
     # can interact with the AI2-THOR environment
@@ -72,6 +85,7 @@ class RobotNavigationControl:
             gridSize=0.25,
             snapToGrid=True,
             #rotateStepDegrees=15,
+            renderInstanceSegmentation=self.harvest_items
         )
 
         # If debug is enabled, then print scene name and a few other things.
@@ -269,11 +283,16 @@ class RobotNavigationControl:
         #self.controller.step(action="TeleportFull", **position, rotation=rotation['y'])
         self.controller.step(action="Teleport", position=position, rotation=rotation)
         #plot_frames(self.controller.last_event)
+        yolo_detections = []
+        if self.harvest_items:
+            yolo_detections = self.yu.extract_detections(self.controller.last_event)
+
         img_uri = self.mapper.get_front_view()
-        img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
-        img_uris = [img_uri]
-        img_uris.extend(img_uri_sides)
-        return img_uris
+        img_uri_with_annotations = (img_uri, yolo_detections)
+        img_uri_sides_with_annotations = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
+        img_uris_and_annotations = [img_uri_with_annotations]
+        img_uris_and_annotations.extend(img_uri_sides_with_annotations)
+        return img_uris_and_annotations
 
     ##
     # We may not always want the full URI from self.mapper.get_target_dir(), we may
@@ -305,7 +324,7 @@ class RobotNavigationControl:
         initial_rotation = event.metadata["agent"]["rotation"]
         initial_standing = event.metadata["agent"]["isStanding"]  # Get current standing state
 
-        img_urls = []
+        img_urls_and_annotations = []
 
         # Capture frames at different angles. We already have the front view, so get the others,
         # that's why start with 1, not 0, but divide 360 still by the full number of angles.
@@ -326,11 +345,15 @@ class RobotNavigationControl:
             img = self.controller.last_event.cv2img
             #frames.append(frame)
 
+            yolo_detections = []
+            if self.harvest_items:
+                yolo_detections = self.yu.extract_detections(self.controller.last_event)
+
             # store them
             os.makedirs(img_dir, exist_ok=True)
             img_url = os.path.join(img_dir, str(int(angle)) + "_" + str(img_index) + ".png")
             cv2.imwrite(img_url, img)
-            img_urls.append(img_url)
+            img_urls_and_annotations.append((img_url, yolo_detections))
 
         # Restore original position and rotation
         self.controller.step(
@@ -341,7 +364,7 @@ class RobotNavigationControl:
             standing=initial_standing  # Include standing parameter
         )
 
-        return img_urls
+        return img_urls_and_annotations
 
     ##
     # Get images from the side cameras, e.g., if we have 3 cameras,
@@ -444,7 +467,7 @@ class RobotNavigationControl:
     ##
     # Follow through a pre-planned path
     ##
-    def follow_planned_path(self, path, plan, data_manager):
+    def follow_planned_path(self, path, plan):
         #self.prev_pose = self.get_agent_pos_and_rotation() # This is where we are before the plan started
         self.prev_pose = thor_agent_pose(self.controller) # This is where we are before the plan started
 
@@ -458,11 +481,21 @@ class RobotNavigationControl:
         # might need a different score.
 
         remaining_path = path
+
+        # get detections for yolo finetune if we need to
+        yolo_detections = []
+        if self.harvest_items:
+            yolo_detections = self.yu.extract_detections(self.controller.last_event)
+
+        # get the front view
         img_uri = self.mapper.get_front_view()
-        img_uri_sides = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
-        img_uris = [img_uri]
-        img_uris.extend(img_uri_sides)
-        img_uris = [self.relative_target_dir(iu) for iu in img_uris]
+        img_uri_with_det = (img_uri, yolo_detections)
+
+        img_uri_sides_with_det = self.get_side_cameras_views(self.mapper.get_target_dir(), self.mapper.get_current_img_counter())
+        img_uris_with_det = [img_uri_with_det]
+        img_uris_with_det.extend(img_uri_sides_with_det)
+        #print("AE:", img_uris_with_det)
+        img_uris_with_det = [(self.relative_target_dir(iu[0]), iu[1]) for iu in img_uris_with_det]
 
         if (self.is_DEBUG):
             print("self.prev_pose", self.prev_pose)
@@ -475,24 +508,29 @@ class RobotNavigationControl:
             step = plan[i] # current step is how to get from previous point to here
             # storing the current path metrics with the last taken picture. When i == 0, the picture
             # will be taken outside the loop and will be the very first view before the motion starts.
-            print(pose, step[0], path_length_at_this_step, img_uris)
+            if (self.is_DEBUG):
+                print(pose, step[0], path_length_at_this_step, img_uris_with_det)
 
             # What are we storing in metrics:
             # step[0] : What action is best to take at this location
             # path_length_at_this_step : How long have we got to go before we have taken this action
             # img_uris : What does it look like at this point
-            data_manager.add_metrics((pose, step[0], path_length_at_this_step, img_uris))
+            if self.habitat_mgmt is not None:
+                self.habitat_mgmt.add_metrics((pose, step[0], path_length_at_this_step, img_uris_with_det))
             # now update the pose and recalculate path length for the next step.
             # The very last pose will yield path length of 0 and loop will exit, but
             # that's ok because we have a final step after the loop that we gather as STOP action
             pose = path[i]
             path_length_at_this_step = get_path_length(remaining_path, thor_pose_as_tuple(pose))
-            img_uris = self.navigate_to_pose(pose) # move to the next step and take a picture
-            img_uris = [self.relative_target_dir(iu) for iu in img_uris]
+            img_uris_with_det = self.navigate_to_pose(pose) # move to the next step and take a picture
+            img_uris_with_det = [(self.relative_target_dir(iu[0]), iu[1]) for iu in img_uris_with_det]
             remaining_path = remaining_path[1:] # update remaining path
 
-        print(pose, "STOP", 0, img_uris) # final step - we've arrived. Remaining path length = 0 and action = STOP
-        data_manager.add_metrics((pose, "STOP", 0, img_uris))
+        if (self.is_DEBUG):
+            print(pose, "STOP", 0, img_uris_with_det) # final step - we've arrived. Remaining path length = 0 and action = STOP
+
+        if self.habitat_mgmt is not None:
+            self.habitat_mgmt.add_metrics((pose, "STOP", 0, img_uris_with_det))
 
         self.controller.step(action="Done")
 

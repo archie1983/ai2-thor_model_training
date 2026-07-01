@@ -2,15 +2,69 @@ from pathlib import Path
 class YoloUtils:
 	def __init__(self):
 		# these are the classes that we will try to detect and extract
-		self.classes_for_yolo_finetune = ["door", "DoorWay", "window", "Sofa", "Desk", "DiningTable", "Fridge",
-										  "Warderobe", "TVStand", "ShelvingUnit", "Bed", "Television",
-										  "GarbageCan", "Painting"]
+
+		# For door detector
+		# self.classes_for_yolo_finetune = ["door", "DoorWay", "window", "Sofa", "Desk", "DiningTable", "Fridge",
+		# 								  "Warderobe", "TVStand", "ShelvingUnit", "Bed", "Television",
+		# 								  "GarbageCan", "Painting"]
+
+		# for room classifier input
+		# self.classes_for_yolo_finetune = ['door', 'DoorWay', 'aluminumfoil', 'alarmclock', 'apple', 'armchair', 'baseballbat', 'basketball', 'bathtub',
+		# 				   'bathtubbasin', 'bed', 'blinds', 'book', 'boots', 'bottle', 'bowl', 'box',
+		# 				   'bread', 'butterknife', 'cabinet', 'candle', 'cd', 'cellphone', 'chair', 'cloth',
+		# 				   'coffeemachine', 'coffeetable', 'countertop', 'creditcard', 'cup', 'curtains',
+		# 				   'desk', 'desklamp', 'desktop', 'diningtable', 'dishsponge', 'dogbed', 'drawer',
+		# 				   'dresser', 'dumbbell', 'egg', 'faucet', 'floor', 'floorlamp', 'footstool',
+		# 				   'fork', 'fridge', 'garbagebag', 'garbagecan', 'handtowel', 'handtowelholder',
+		# 				   'houseplant', 'kettle', 'keychain', 'knife', 'ladle', 'laptop', 'laundryhamper',
+		# 				   'lettuce', 'lightswitch', 'microwave', 'mirror', 'mug', 'newspaper', 'ottoman',
+		# 				   'painting', 'pan', 'papertowelroll', 'pen', 'pencil', 'peppershaker', 'pillow',
+		# 				   'plate', 'plunger', 'poster', 'pot', 'potato', 'remotecontrol', 'roomdecor',
+		# 				   'safe', 'saltshaker', 'scrubbrush', 'shelf', 'shelvingunit', 'showercurtain',
+		# 				   'showerdoor', 'showerglass', 'showerhead', 'sidetable', 'sink', 'sinkbasin',
+		# 				   'soapbar', 'soapbottle', 'sofa', 'spatula', 'spoon', 'spraybottle', 'statue',
+		# 				   'stool', 'stoveburner', 'stoveknob', 'tabletopdecor', 'teddybear',
+		# 				   'television', 'tennisracket', 'tissuebox', 'toaster', 'toilet', 'toiletpaper',
+		# 				   'toiletpaperhanger', 'tomato', 'towel', 'towelholder', 'tvstand',
+		# 				   'vacuumcleaner', 'vase', 'watch', 'wateringcan', 'window', 'winebottle']
+
+		self.classes_for_yolo_finetune = ['LaundryHamper', 'Newspaper', 'Faucet', 'Pot', 'Ladle', 'TennisRacket', 'Pan', 'HandTowelHolder', 'Safe',
+			'TeddyBear', 'ArmChair', 'AluminumFoil', 'HandTowel', 'Bread', 'TableTopDecor', 'Plunger', 'Microwave',
+			'CoffeeTable', 'WineBottle', 'Plate', 'ToiletPaper', 'Laptop', 'Toaster', 'Towel', 'SideTable',
+			'WashingMachine', 'ShowerHead', 'Cup', 'DiningTable', 'Toilet', 'DogBed', 'DeskLamp', 'Lettuce',
+			'ShowerCurtain', 'TowelHolder', 'Blinds', 'Watch', 'PaperTowelRoll', 'Apple', 'ButterKnife', 'GarbageBag',
+			'Desk', 'Statue', 'KeyChain', 'PepperShaker', 'VacuumCleaner', 'CounterTop', 'Mug', 'CD', 'Vase', 'Egg',
+			'Doorframe', 'TissueBox', 'Fork', 'FloorLamp', 'Television', 'BasketBall', 'SaltShaker', 'ShelvingUnit',
+			'Sofa', 'RoomDecor', 'Cart', 'Pencil', 'Knife', 'Dumbbell', 'Bed', 'Dresser', 'SoapBar', 'Spatula',
+			'CoffeeMachine', 'Kettle', 'Sink', 'SoapBottle', 'GarbageCan', 'Pen', 'CellPhone', 'Bottle', 'LightSwitch',
+			'ToiletPaperHanger', 'Pillow', 'BaseballBat', 'DishSponge', 'Desktop', 'Fridge', 'CreditCard', 'Painting',
+			'SprayBottle', 'Tomato', 'Book', 'Ottoman', 'Bowl', 'AlarmClock', 'Box', 'Candle', 'Window', 'WateringCan',
+			'Boots', 'Cloth', 'Potato', 'ClothesDryer', 'RemoteControl', 'ScrubBrush', 'Stool', 'Doorway', 'Footstool',
+			'Chair', 'TVStand', 'HousePlant', 'Spoon']
+
 		self.classes_for_yolo_finetune = [lbl.upper() for lbl in self.classes_for_yolo_finetune]
 
 		# we will group them into these classes and use these for the actual finetune
-		self.classes_for_yolo_output = ["OpenDoor", "ClosedDoor", "window", "Sofa", "Desk", "DiningTable", "Fridge",
-										  "Warderobe", "TVStand", "ShelvingUnit", "Bed", "Television",
-										  "GarbageCan", "Painting"]
+		# for door detector:
+		# self.classes_for_yolo_output = ["OpenDoor", "ClosedDoor", "window", "Sofa", "Desk", "DiningTable", "Fridge",
+		# 								  "Warderobe", "TVStand", "ShelvingUnit", "Bed", "Television",
+		# 								  "GarbageCan", "Painting"]
+
+		# for room classifier input:
+		self.classes_for_yolo_output = ['OpenDoor', 'ClosedDoor', 'LaundryHamper', 'Newspaper', 'Faucet', 'Pot', 'Ladle',
+			'TennisRacket', 'Pan', 'HandTowelHolder', 'Safe',
+			'TeddyBear', 'ArmChair', 'AluminumFoil', 'HandTowel', 'Bread', 'TableTopDecor', 'Plunger', 'Microwave',
+			'CoffeeTable', 'WineBottle', 'Plate', 'ToiletPaper', 'Laptop', 'Toaster', 'Towel', 'SideTable',
+			'WashingMachine', 'ShowerHead', 'Cup', 'DiningTable', 'Toilet', 'DogBed', 'DeskLamp', 'Lettuce',
+			'ShowerCurtain', 'TowelHolder', 'Blinds', 'Watch', 'PaperTowelRoll', 'Apple', 'ButterKnife', 'GarbageBag',
+			'Desk', 'Statue', 'KeyChain', 'PepperShaker', 'VacuumCleaner', 'CounterTop', 'Mug', 'CD', 'Vase', 'Egg',
+			'TissueBox', 'Fork', 'FloorLamp', 'Television', 'BasketBall', 'SaltShaker', 'ShelvingUnit',
+			'Sofa', 'RoomDecor', 'Cart', 'Pencil', 'Knife', 'Dumbbell', 'Bed', 'Dresser', 'SoapBar', 'Spatula',
+			'CoffeeMachine', 'Kettle', 'Sink', 'SoapBottle', 'GarbageCan', 'Pen', 'CellPhone', 'Bottle', 'LightSwitch',
+			'ToiletPaperHanger', 'Pillow', 'BaseballBat', 'DishSponge', 'Desktop', 'Fridge', 'CreditCard', 'Painting',
+			'SprayBottle', 'Tomato', 'Book', 'Ottoman', 'Bowl', 'AlarmClock', 'Box', 'Candle', 'Window', 'WateringCan',
+			'Boots', 'Cloth', 'Potato', 'ClothesDryer', 'RemoteControl', 'ScrubBrush', 'Stool', 'Footstool',
+			'Chair', 'TVStand', 'HousePlant', 'Spoon']
 
 		self.classes_for_yolo_output = [lbl.upper() for lbl in self.classes_for_yolo_output]
 
@@ -48,8 +102,10 @@ class YoloUtils:
 			if obj_type.upper().startswith("DOOR"):
 				if obj["isOpen"]:
 					obj_type = "OpenDoor"
+					print('o', sep='', end='')
 				else:
 					obj_type = "ClosedDoor"
+					print('c', sep='', end='')
 
 			# AI2-Thor provides 2D bounding boxes via instance segmentation map
 			# We derive the tight bounding box from the instance segmentation mask

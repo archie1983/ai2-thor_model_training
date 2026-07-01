@@ -36,7 +36,7 @@ from ai2_thor_model_training.ae_utils import (NavigationUtils, RoomType, get_roo
 ##
 class NavigationTrainingDataExtractor:
     def __init__(self, data_store_dir = "harvested_data", harvest_items = False):
-        self.HABITAT_SET_PREFIX = "train" # "val" "test"
+        self.HABITAT_SET_PREFIX = "val" # "train" # "test"
         self.data_store_dir = data_store_dir
         self.dataset = None
         self.controller = None
@@ -526,7 +526,10 @@ class NavigationTrainingDataExtractor:
 
         #keywords = {'v_angles': [30], 'return_plan': True}
         keywords = {'v_angles': [0], 'return_plan': True, 'diagonal_ok': True}
-        return get_shortest_path_to_object(self.controller, "TargetPoint", start_position, start_rotation, target_position=target_position, **keywords)
+        try:
+            return get_shortest_path_to_object(self.controller, "TargetPoint", start_position, start_rotation, target_position=target_position, **keywords)
+        except IndexError:
+            raise ValueError("Thortils dropped ball in get_shortest_path_to_object(...)")
 
     def get_current_pose(self):
         return self.rnc.get_agent_pos_and_rotation()

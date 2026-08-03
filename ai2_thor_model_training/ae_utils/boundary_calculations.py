@@ -525,12 +525,12 @@ class BoundaryCalculations:
         This returns the furthest boundary point in the agent's line of sight.
         """
         room_boundary_poly = Polygon(room_boundary)
-        agent_x = agent_pos_with_rtn[0][0]
-        agent_y = agent_pos_with_rtn[0][2]
+        agent_x = agent_pos_with_rtn[0]
+        agent_y = agent_pos_with_rtn[1]
 
         #print("WITHIN BOUNDS: ", room_boundary_poly.contains(Point(agent_x, agent_y)))
 
-        agent_rtn = agent_pos_with_rtn[1][1]
+        agent_rtn = agent_pos_with_rtn[2]
         agent_pos = (agent_x, agent_y)
 
         # Convert heading to math angle (0=right, counterclockwise)

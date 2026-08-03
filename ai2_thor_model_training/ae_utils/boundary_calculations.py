@@ -548,7 +548,13 @@ class BoundaryCalculations:
                 agent_pos, math_angle, room_boundary_poly, max_distance=10.0
             )
 
-        return target
+        if target is not None:
+            # ensure that the point really belongs to the boundary set because polygon maths sometimes returns funky values, e.g., 1.740000000002 instead of 1.75
+            distance_to_trg, actual_target = min([(self.euclidean_dist(target, p), p) for p in room_boundary], key=lambda x: x[0])
+        else:
+            actual_target = None
+
+        return actual_target
 
 #if __name__ == "__main__":
     #bc = BoundaryCalculations()

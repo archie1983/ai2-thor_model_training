@@ -330,7 +330,7 @@ class BoundaryCalculations:
         room_polys = []
         for room in house["rooms"]:
             room_poly = [(corner["x"], corner["z"]) for corner in room["floorPolygon"]]
-            print(room["roomType"] + ": " + str(room_poly))
+            #print(room["roomType"] + ": " + str(room_poly))
             room_polys.append(room_poly)
         return room_polys
 
@@ -356,7 +356,7 @@ class BoundaryCalculations:
 
         for rp in all_room_polys:
             if self.is_wallless_neighbours(this_room_poly, rp, all_walls):
-                print("walless neighbour room: ", rp)
+                #print("walless neighbour room: ", rp)
                 #resulting_poly.extend(rp)
                 resulting_poly = unary_union([Polygon(this_room_poly), Polygon(rp)])
                 #resulting_poly = rp

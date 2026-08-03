@@ -134,6 +134,11 @@ class NavigationActions():
         self.TURN_LEFT = self.create_move(0, 0, -45, straight_move_cost)
         self.TURN_RIGHT = self.create_move(0, 0, 45, straight_move_cost)
 
+        self.STRAIGHT_MOVE_MOVES = [self.MOVE_NORTH,
+                           self.MOVE_SOUTH,
+                           self.MOVE_EAST,
+                           self.MOVE_WEST]
+
         self.MOVE_MOVES = [self.MOVE_NORTH,
                            self.MOVE_SOUTH,
                            self.MOVE_EAST,

@@ -319,7 +319,10 @@ class BoundaryCalculations:
         # that's the floor perimeter that we want.
         separated_boundaries = self.get_room_perimeter_points_2nd_pass(boundary_points, self.na)
 
-        return separated_boundaries[-1]
+        if len(separated_boundaries) > 0:
+            return separated_boundaries[-1]
+        else:
+            return None
 
     def get_room_polys(self, house):
         '''

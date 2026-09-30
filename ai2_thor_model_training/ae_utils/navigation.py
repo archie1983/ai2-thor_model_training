@@ -397,7 +397,8 @@ class NavigationUtils:
                          close_enough = 0.5,
                          step = 0.25,
                          extend_path = True,
-                         debug=False):
+                         debug=False,
+                         extend_path_by = 1.5):
         point_for_room_search = (current_point_and_rtn[0], "", current_point_and_rtn[1])
         cur_pos = ((current_point_and_rtn[0], 0.9009993672370911, current_point_and_rtn[1]),
                    (0.0, float(current_point_and_rtn[2]), 0.0))
@@ -511,15 +512,15 @@ class NavigationUtils:
                         if int(door_yaw) in [90, 270]:  ## looking east or west, so X coordinate change
                             direction = rgc.x > current_point_and_rtn[0]  # True means we're going EAST, False means we're going WEST
                             if direction:
-                                new_point_target = Point(target_position_point.x + 0.5, target_position_point.y)
+                                new_point_target = Point(target_position_point.x + extend_path_by, target_position_point.y)
                             else:
-                                new_point_target = Point(target_position_point.x - 0.5, target_position_point.y)
+                                new_point_target = Point(target_position_point.x - extend_path_by, target_position_point.y)
                         elif int(door_yaw) in [0, 180, 360]:  # looking south or north, so Y coordinate change
                             direction = rgc.y > current_point_and_rtn[1]  # True means we're going NORTH, False means we're going SOUTH
                             if direction:
-                                new_point_target = Point(target_position_point.x, target_position_point.y + 0.5)
+                                new_point_target = Point(target_position_point.x, target_position_point.y + extend_path_by)
                             else:
-                                new_point_target = Point(target_position_point.x, target_position_point.y - 0.5)
+                                new_point_target = Point(target_position_point.x, target_position_point.y - extend_path_by)
                         else:
                             raise ValueError("Door in non-standard orientation")
 

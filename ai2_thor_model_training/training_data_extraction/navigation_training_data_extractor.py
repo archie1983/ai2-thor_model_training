@@ -35,8 +35,8 @@ from ai2_thor_model_training.ae_utils import (NavigationUtils, RoomType, get_roo
 # the navigation diffuser).
 ##
 class NavigationTrainingDataExtractor:
-    def __init__(self, data_store_dir = "harvested_data", harvest_items = False):
-        self.HABITAT_SET_PREFIX = "val" # "train" # "test"
+    def __init__(self, data_store_dir = "harvested_data", harvest_items = False, data_set = "train"):
+        self.HABITAT_SET_PREFIX = data_set # "train" # "test" # "val" #
         self.data_store_dir = data_store_dir
         self.dataset = None
         self.controller = None

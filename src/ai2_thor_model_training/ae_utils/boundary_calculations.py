@@ -522,7 +522,7 @@ class BoundaryCalculations:
         furthest = max(all_points, key=lambda p: p.distance(ray_start))
         return (furthest.x, furthest.y)
 
-    def get_target_boundary_point(self, room_boundary, agent_pos_with_rtn):
+    def get_target_boundary_point(self, room_boundary, agent_pos_with_rtn, max_distance=10.0):
         """
         Get the target boundary point for perimeter navigation.
         This returns the furthest boundary point in the agent's line of sight.
@@ -542,13 +542,13 @@ class BoundaryCalculations:
 
         # Use the ray casting approach
         target = self.find_furthest_boundary_point_raycast(
-            agent_pos, math_angle, room_boundary_poly, max_distance=10.0
+            agent_pos, math_angle, room_boundary_poly, max_distance=max_distance
         )
 
         if target is None:
             # Fallback: use sampling
             target = self.find_furthest_boundary_point(
-                agent_pos, math_angle, room_boundary_poly, max_distance=10.0
+                agent_pos, math_angle, room_boundary_poly, max_distance=max_distance
             )
 
         if target is not None:

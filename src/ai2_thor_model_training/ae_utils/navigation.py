@@ -402,6 +402,7 @@ class NavigationUtils:
                          close_enough = 0.5,
                          step = 0.25,
                          extend_path = True,
+                         visible_only = False,
                          debug=False):
         point_for_room_search = (current_point_and_rtn[0], "", current_point_and_rtn[1])
         cur_pos = ((current_point_and_rtn[0], 0.9009993672370911, current_point_and_rtn[1]),
@@ -438,6 +439,11 @@ class NavigationUtils:
             #print("isOpen: ", door["isOpen"])
             # skip closed doors
             if not door["isOpen"]: continue
+
+            # if we want visible only, then also skip invisible doors
+            # But do we want to leave all in because we may want to guide it through an angle that we provide even
+            # if the door is invisible?
+            if visible_only and not door["visible"]: continue
 
             # TODO: Use angle_to_turn_to_face_p2_from_p1 from ai2_thor_utils.py and incorporate it into the
             # path planning so that at the end it turns to face the door.
@@ -589,8 +595,12 @@ class NavigationUtils:
         #if len(same_room_invisible) > 0:
         #    selected_target = same_room_invisible[0]
         #el
+
         if len(same_room_visible) > 0:
             selected_target = same_room_visible[0]
+        elif visible_only:
+            # if we want visible only, but there are none, (len(same_room_visible) <= 0), then return None
+            selected_target = None
         elif len(all_rooms_sorted_by_distance) > 0:
             selected_target = all_rooms_sorted_by_distance[0]
 

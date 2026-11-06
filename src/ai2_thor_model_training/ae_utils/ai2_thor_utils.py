@@ -729,9 +729,9 @@ def angle_to_turn_to_face_p2_from_p1(p1, p2):
     # Convert the angle from radians to degrees if needed
     angle_degrees = math.degrees(angle_to_face_point2)
 
-    # Normalize the angle to be between 0 and 360 degrees
-    if angle_degrees < 0:
-        angle_degrees += 360
+    # # Normalize the angle to be between 0 and 360 degrees
+    # if angle_degrees < 0:
+    #     angle_degrees += 360
 
     return angle_degrees
 

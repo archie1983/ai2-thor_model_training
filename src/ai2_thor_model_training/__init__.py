@@ -5,7 +5,7 @@ from .ae_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
                             get_path_length, get_centre_of_the_room,
                             room_this_point_belongs_to, angle_to_turn_to_face_p2_from_p1,
                             convert_pose_set2tuple, normalize_colors, action_mapping, inverted_action_mapping,
-                            action_to_index, index_to_action)
+                            action_to_index, index_to_action, deg_to_rtn)
 from .training_data_extraction import RobotNavigationControl
 __all__ = ["AI2THORUtils", "RobotNavigationControl", "is_point_inside_room_ground_truth",
                             "get_rooms_ground_truth",
@@ -14,6 +14,6 @@ __all__ = ["AI2THORUtils", "RobotNavigationControl", "is_point_inside_room_groun
                             "get_path_length", "get_centre_of_the_room",
                             "room_this_point_belongs_to", "angle_to_turn_to_face_p2_from_p1",
                             "convert_pose_set2tuple", "normalize_colors", "action_mapping", "inverted_action_mapping",
-                            "action_to_index", "index_to_action"]
+                            "action_to_index", "index_to_action", "deg_to_rtn"]
 
 __version__ = "1.0.1"

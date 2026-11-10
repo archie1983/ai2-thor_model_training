@@ -7,7 +7,7 @@ from .ai2_thor_utils import (AI2THORUtils, is_point_inside_room_ground_truth,
                             room_this_point_belongs_to, angle_to_turn_to_face_p2_from_p1,
                             convert_pose_set2tuple, normalize_colors, action_mapping, inverted_action_mapping,
                             action_to_index, index_to_action, euclidean_dist, get_room_poly_by_room_id,
-                            create_full_grid_from_room_layout, add_buffer_to_unreachable)
+                            create_full_grid_from_room_layout, add_buffer_to_unreachable, deg_to_rtn)
 
 from .navigation import NavigationUtils, NavigationActions, round_to_step
 

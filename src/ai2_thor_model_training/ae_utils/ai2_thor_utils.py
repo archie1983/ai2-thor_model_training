@@ -714,17 +714,22 @@ class AI2THORUtils:
 # Calculates the angle that we need to turn in order to face p2 if we are
 # standing at p1.
 ##
-def angle_to_turn_to_face_p2_from_p1(p1, p2):
+def angle_from_p1_to_p2(p1, p2):
     # Define the coordinates of the two points
     (x1, y1) = p1
     (x2, y2) = p2
 
-    # Calculate the vector components from point 1 to point 2
+    # Calculate the vector components from point 1 to point 2.
+    # Since we're centered at p1 and are looking at p2, then the deltas will be x2 - x1 and y2 - y1
     dx = x2 - x1
     dy = y2 - y1
 
     # Calculate the angle using atan2
-    angle_to_face_point2 = math.atan2(dy, dx)
+    # Since we're in AI2-Thor, we want NORTH to be 0 degrees and y increases the higher you go as opposed to normal
+    # computer graphics, where (0, 0) is the left top corner. Therefore we want to pass (dx, dy) instead of (dy, dx).
+    # Don't ask, I only figured this out once myself, but that's what we want- alternatively we would have to add or subtract
+    # weird constants all the time!
+    angle_to_face_point2 = math.atan2(dx, dy)
 
     # Convert the angle from radians to degrees if needed
     angle_degrees = math.degrees(angle_to_face_point2)
@@ -735,6 +740,28 @@ def angle_to_turn_to_face_p2_from_p1(p1, p2):
 
     return angle_degrees
 
+##
+# Normalizes degrees to rotational offsets from 0 degrees being North. For example 315 becomes -45
+# and 181 becomes -179, whereas 101 stays 101.
+##
+def deg_to_rtn(deg):
+    while deg < -180:
+        deg += 360
+    while deg > 180:
+        deg -= 360
+    return deg
+
+def angle_to_turn_to_face_p2_from_p1(p1, p2, cur_rtn):
+    """
+
+    :param p1: point 1
+    :param p2: point 2
+    :param cur_rtn: current yaw rotation in degrees
+    :return:
+    """
+    angle = angle_from_p1_to_p2(p1, p2)
+    comp = deg_to_rtn(angle - cur_rtn)
+    return comp
 ##
 # Calculates Euclidean distance between two points on a plane. If we pass 3 coordinates, then we drop the
 # middle one.

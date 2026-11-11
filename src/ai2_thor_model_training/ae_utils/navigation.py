@@ -204,7 +204,6 @@ class NavigationActions():
 
         return new_node
 
-
 class NavigationUtils:
     '''
     Here we put it all together- We use the A* algorithm to do something useful. Initially just getting the path cost
@@ -404,6 +403,11 @@ class NavigationUtils:
                          extend_path = True,
                          visible_only = False,
                          debug=False):
+
+        # If we put it at the top, we get circular dependency, so no choice, but to import it here
+        from . import BoundaryCalculations
+        bc = BoundaryCalculations()
+
         point_for_room_search = (current_point_and_rtn[0], "", current_point_and_rtn[1])
         cur_pos = ((current_point_and_rtn[0], 0.9009993672370911, current_point_and_rtn[1]),
                    (0.0, float(current_point_and_rtn[2]), 0.0))
@@ -495,12 +499,19 @@ class NavigationUtils:
                         # polygons of both rooms
                         room1_poly = get_room_poly_by_room_id(habitat, room1_id)
                         room2_poly = get_room_poly_by_room_id(habitat, room2_id)
+                        room1_poly = bc.expand_room_poly_if_needed((None, room1_poly), habitat)
+                        room2_poly = bc.expand_room_poly_if_needed((None, room2_poly), habitat)
+                        room_of_placement_poly = bc.expand_room_poly_if_needed(room_of_placement, habitat)
                         # Which room are we coming from and which one are we going to?
 
                         # if no room polygons either side of the door are the current room polygons, then we're not looking
                         # at a door that connects our current room to another.
-                        if room_of_placement[1] != room1_poly and room_of_placement[1] != room2_poly:
+                        # This actually presents a bug because some rooms may not be separated by walls (e.g. an open
+                        # plan living room and kitchen) and we might technically be standing in the kitchen looking at
+                        # a door that connects living room to bedroom. The current approach will not allow that.
+                        if room_of_placement_poly != room1_poly and room_of_placement_poly != room2_poly:
                             # continue
+                            print("room_of_placement[1]: ", room_of_placement[1], "room1_poly: ", room1_poly, "room2_poly: ", room2_poly, " room_of_placement_poly: ", room_of_placement_poly)
                             raise ValueError("Irrelevant door")
 
                         if is_point_inside_room_ground_truth(point_for_room_search, room1_poly):
@@ -568,7 +579,8 @@ class NavigationUtils:
                 all_door_targets.append({"pos": target_position,
                                          "in_same_room": is_in_same_room,
                                          "visible": door['visible'],
-                                         "distance": door_path_length,})
+                                         "distance": door_path_length,
+                                         "door_pos": (door_center_pos['x'], door_center_pos['z'])})
                                          #"door_obj": door})
         #print("all_door_targets: ", all_door_targets)
 
@@ -582,8 +594,11 @@ class NavigationUtils:
         same_room_visible = [door_target for door_target in all_door_targets if
                              door_target["in_same_room"] and door_target["visible"]]
 
+        all_rooms_visible = [door_target for door_target in all_door_targets if door_target["visible"]]
+
         same_room_invisible = sorted(same_room_invisible, key=lambda room_tuple: room_tuple["distance"])
         same_room_visible = sorted(same_room_visible, key=lambda room_tuple: room_tuple["distance"])
+        all_rooms_visible = sorted(all_rooms_visible, key=lambda room_tuple: room_tuple["distance"])
         all_rooms_sorted_by_distance = sorted(all_door_targets, key=lambda room_tuple: room_tuple["distance"])
 
         #print("AE: time_diffs_pc = ", time_diffs_pc, " sum = ", sum(time_diffs_pc), " time_diffs_pc2 = ", time_diffs_pc2, " sum = ", sum(time_diffs_pc))
@@ -598,6 +613,9 @@ class NavigationUtils:
 
         if len(same_room_visible) > 0:
             selected_target = same_room_visible[0]
+        elif len(all_rooms_visible) > 0:
+            # if we see a door in a different room (possible because sometimes room boundary is non existent (open plan kitchen + dining room)
+            selected_target = all_rooms_visible[0]
         elif visible_only:
             # if we want visible only, but there are none, (len(same_room_visible) <= 0), then return None
             selected_target = None
@@ -610,7 +628,10 @@ class NavigationUtils:
             #print("Sel door size: ", door["axisAlignedBoundingBox"]["size"])
             #print("Sel door rotation: ", door["rotation"])
             #print("Sel door isOpen: ", door["isOpen"])
-            return Point(selected_target["pos"]["x"], selected_target["pos"]["z"]), all_door_targets
+            if visible_only:
+                return Point(selected_target["pos"]["x"], selected_target["pos"]["z"]), all_door_targets, selected_target['door_pos']
+            else:
+                return Point(selected_target["pos"]["x"], selected_target["pos"]["z"]), all_door_targets
         else:
             raise ValueError("No door found that can be navigated to")
 

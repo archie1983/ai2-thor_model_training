@@ -400,14 +400,10 @@ class NavigationUtils:
                          controller,
                          close_enough = 0.5,
                          step = 0.25,
+                         door_depth = 1.0, # how far after door we want to stop
                          extend_path = True,
                          visible_only = False,
                          debug=False):
-
-        # If we put it at the top, we get circular dependency, so no choice, but to import it here
-        from . import BoundaryCalculations
-        bc = BoundaryCalculations()
-
         point_for_room_search = (current_point_and_rtn[0], "", current_point_and_rtn[1])
         cur_pos = ((current_point_and_rtn[0], 0.9009993672370911, current_point_and_rtn[1]),
                    (0.0, float(current_point_and_rtn[2]), 0.0))
@@ -459,114 +455,86 @@ class NavigationUtils:
 
             try:
                 if extend_path: # if path doesn't need to be extended, then just calculate path to the doors
-                    if extend_path:
-                        # This is what we do now:
-                        # Retrieve the path to this door. If path length is equal or less than 1, then drop it and ignore
-                        #  it. That's likely a door that we've just gone through and is probably behind us. Then look at the
-                        #  step just before the final one in the path:
-                        #  1) Measure what room does that point belong to.
-                        #  2) Look at what two rooms does the door connect. Now we have the room that we want to get to.
-                        #  3) Look at the orientation of the door. If it's 270 or 90 degrees, then we want to change X
-                        #     coordinate. If it's 0 or 180 degrees, then we want to change Y coordinate to get to the desired
-                        #     room.
-                        #  4) Look at the centre of that room, specifically the relevant coordinate. Do we want to increase or
-                        #     decrease the relevant coordinate (X or Y)?
-                        #  5) Increase or decrease the relevant coordinate from the final point in the path. The amount to
-                        #     increase by- some small multiple of grid size, making sure that we cross over. We make sure of
-                        #     that by analysing whether the new end point for the path belongs to the required room or not.
-                        # If too close to where we are, then ignore
-                        # print("cur_pos: ", cur_pos, " target_position_point.x, target_position_point.y: ", target_position_point.x, target_position_point.y)
-                        #if euclidean_dist(cur_pos[0], [target_position_point.x,
-                        #                                                        target_position_point.y]) <= 3 * step:
-                        #    raise ValueError("Door too close to start pose")
+                    # This is what we do now:
+                    # Retrieve the path to this door. If path length is equal or less than 1, then drop it and ignore
+                    #  it. That's likely a door that we've just gone through and is probably behind us. Then look at the
+                    #  step just before the final one in the path:
+                    #  1) Measure what room does that point belong to.
+                    #  2) Look at what two rooms does the door connect. Now we have the room that we want to get to.
+                    #  3) Look at the orientation of the door. If it's 270 or 90 degrees, then we want to change X
+                    #     coordinate. If it's 0 or 180 degrees, then we want to change Y coordinate to get to the desired
+                    #     room.
+                    #  4) Look at the centre of that room, specifically the relevant coordinate. Do we want to increase or
+                    #     decrease the relevant coordinate (X or Y)?
+                    #  5) Increase or decrease the relevant coordinate from the final point in the path. The amount to
+                    #     increase by- some small multiple of grid size, making sure that we cross over. We make sure of
+                    #     that by analysing whether the new end point for the path belongs to the required room or not.
+                    # If too close to where we are, then ignore
+                    # print("cur_pos: ", cur_pos, " target_position_point.x, target_position_point.y: ", target_position_point.x, target_position_point.y)
+                    #if euclidean_dist(cur_pos[0], [target_position_point.x,
+                    #                                                        target_position_point.y]) <= 3 * step:
+                    #    raise ValueError("Door too close to start pose")
 
-                        # Let's examine the path- the last two steps to be exact.
-                        #path = self.get_last_path_and_params()[0]
-                        #if len(path) < 2:  # not sure how this can happen after the check above, but it did happen. I'll investigate later
-                        #    print('v', sep='', end='')
-                        #    raise ValueError("Door too close to start pose")
+                    # Let's examine the path- the last two steps to be exact.
+                    #path = self.get_last_path_and_params()[0]
+                    #if len(path) < 2:  # not sure how this can happen after the check above, but it did happen. I'll investigate later
+                    #    print('v', sep='', end='')
+                    #    raise ValueError("Door too close to start pose")
 
-                        # what two rooms does this door connect?
-                        door_name = door["name"]
-                        (_, room1_id, room2_id) = door_name.split("|")
+                    # what two rooms does this door connect?
+                    door_name = door["name"]
+                    (_, room1_id, room2_id) = door_name.split("|")
 
-                        # print(room_of_placement)
-                        # if room_of_placement["id"] == "room|" + str(room1_id):
-                        #     room_going_to = get_room_poly_by_room_id(habitat, room2_id)
-                        # else:
-                        #     room_going_to = get_room_poly_by_room_id(habitat, room1_id)
+                    # print(room_of_placement)
+                    # if room_of_placement["id"] == "room|" + str(room1_id):
+                    #     room_going_to = get_room_poly_by_room_id(habitat, room2_id)
+                    # else:
+                    #     room_going_to = get_room_poly_by_room_id(habitat, room1_id)
 
-                        # polygons of both rooms
-                        room1_poly = get_room_poly_by_room_id(habitat, room1_id)
-                        room2_poly = get_room_poly_by_room_id(habitat, room2_id)
-                        room1_poly = bc.expand_room_poly_if_needed((None, room1_poly), habitat)
-                        room2_poly = bc.expand_room_poly_if_needed((None, room2_poly), habitat)
-                        room_of_placement_poly = bc.expand_room_poly_if_needed(room_of_placement, habitat)
-                        # Which room are we coming from and which one are we going to?
+                    # what is the door orientation?
+                    door_yaw = door["rotation"]["y"]
 
-                        # if no room polygons either side of the door are the current room polygons, then we're not looking
-                        # at a door that connects our current room to another.
-                        # This actually presents a bug because some rooms may not be separated by walls (e.g. an open
-                        # plan living room and kitchen) and we might technically be standing in the kitchen looking at
-                        # a door that connects living room to bedroom. The current approach will not allow that.
-                        if room_of_placement_poly != room1_poly and room_of_placement_poly != room2_poly:
-                            # continue
-                            print("room_of_placement[1]: ", room_of_placement[1], "room1_poly: ", room1_poly, "room2_poly: ", room2_poly, " room_of_placement_poly: ", room_of_placement_poly)
-                            raise ValueError("Irrelevant door")
+                    # So what we want to do, is calculate a path to a point some distance either side of the door.
+                    # Then we compare which path is longer. The longer path is further away from us, so that's the
+                    # point we want to navigate to in order to cross well into the next room.
+                    if int(door_yaw) in [90, 270]:  ## looking east or west, so X coordinate change
+                        new_point_target_east = Point(target_position_point.x + door_depth, target_position_point.y)
+                        new_point_target_west = Point(target_position_point.x - door_depth, target_position_point.y)
+                        points_to_try = [new_point_target_east, new_point_target_west]
+                    elif int(door_yaw) in [0, 180, 360]:  # looking south or north, so Y coordinate change
+                        new_point_target_north = Point(target_position_point.x, target_position_point.y + door_depth)
+                        new_point_target_south = Point(target_position_point.x, target_position_point.y - door_depth)
+                        points_to_try = [new_point_target_north, new_point_target_south]
+                    else:
+                        raise ValueError("Door in non-standard orientation")
 
-                        if is_point_inside_room_ground_truth(point_for_room_search, room1_poly):
-                            room_coming_from = room1_poly
-                            room_going_to = room2_poly
-                        elif is_point_inside_room_ground_truth(point_for_room_search, room2_poly):
-                            room_coming_from = room2_poly
-                            room_going_to = room1_poly
-                        else:
-                            raise ValueError("Door linking rooms' lookup failed")
-                        # what is the door orientation?
-                        door_yaw = door["rotation"]["y"]
-                        rgc = get_centre_of_the_room(room_going_to)
-
-                        # Sometimes the room centre point is empty
-                        if rgc.is_empty:
-                            raise ValueError("Room Centre can't be calculated")
-
-                        if int(door_yaw) in [90, 270]:  ## looking east or west, so X coordinate change
-                            direction = rgc.x > current_point_and_rtn[0]  # True means we're going EAST, False means we're going WEST
-                            if direction:
-                                new_point_target = Point(target_position_point.x + 0.5, target_position_point.y)
-                            else:
-                                new_point_target = Point(target_position_point.x - 0.5, target_position_point.y)
-                        elif int(door_yaw) in [0, 180, 360]:  # looking south or north, so Y coordinate change
-                            direction = rgc.y > current_point_and_rtn[1]  # True means we're going NORTH, False means we're going SOUTH
-                            if direction:
-                                new_point_target = Point(target_position_point.x, target_position_point.y + 0.5)
-                            else:
-                                new_point_target = Point(target_position_point.x, target_position_point.y - 0.5)
-                        else:
-                            raise ValueError("Door in non-standard orientation")
-
-                        # new_point_target now contains a point just beyond the door centre.
-                        # update target position to reflect the new target beyond the door centre
-                        target_position = {"x": new_point_target.x, "y": door_center_pos['y'],
-                                           "z": new_point_target.y}
-
+                    # test both new points to see which path is longer
+                    path_test_results = []
+                    for new_point_target in points_to_try:
                         door_path_length = self.get_path_cost_to_target_point(cur_pos,
                                                                               new_point_target,
                                                                               reachable_positions,
                                                                               close_enough=close_enough,
                                                                               step=step)
+                        path_test_results.append((new_point_target, door_path_length))
+
+                    # now analyse path lengths that we got
+                    chosen_point = max(path_test_results, key=lambda x: x[1])[0]
+                    target_position = {"x": chosen_point.x, "y": door_center_pos['y'],
+                                       "z": chosen_point.y}
+
                     #room_coming_from = room_this_point_belongs_to(rooms_in_habitat, [path[-2][0], "", path[-2][1]])
                     #print("room_coming_from: ", room_coming_from)
                     #print(door)
                 else: # if path doesn't need to be extended, then just calculate path to the doors
-                        door_path_length = self.get_path_cost_to_target_point(cur_pos,
-                                                                              target_position_point,
-                                                                              reachable_positions,
-                                                                              close_enough=close_enough,
-                                                                              step=step)
-                        # room_coming_from = room_this_point_belongs_to(rooms_in_habitat, [path[-2][0], "", path[-2][1]])
-                        # print("room_coming_from: ", room_coming_from)
-                        # print(door)
+                    door_path_length = self.get_path_cost_to_target_point(cur_pos,
+                                                                          target_position_point,
+                                                                          reachable_positions,
+                                                                          close_enough=close_enough,
+                                                                          step=step)
+                    # room_coming_from = room_this_point_belongs_to(rooms_in_habitat, [path[-2][0], "", path[-2][1]])
+                    # print("room_coming_from: ", room_coming_from)
+                    # print(door)
             except ValueError as e:
                 if debug:
                     print("PLANNING ERR: ", e, door)

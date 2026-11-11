@@ -355,7 +355,7 @@ class BoundaryCalculations:
         all_room_polys = self.get_room_polys(house)
         all_walls = self.get_house_walls(house)
         this_room_poly = room_of_placement[1]
-        resulting_poly = this_room_poly
+        resulting_poly = Polygon(this_room_poly)
 
         for rp in all_room_polys:
             if self.is_wallless_neighbours(this_room_poly, rp, all_walls):

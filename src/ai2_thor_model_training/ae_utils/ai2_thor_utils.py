@@ -876,18 +876,23 @@ def get_visible_object_names_from_collection_set(objects):
 
     return objs_at_this_pos
 
-def get_all_objects(event_or_controller):
-    event = _resolve(event_or_controller)
-    thor_objects = thor_get(event, "objects")
-    result = []
-    for obj in thor_objects:
-        if obj["visible"]:
-            result.append(obj)
-    return result
+# def get_all_objects(event_or_controller):
+#     event = _resolve(event_or_controller)
+#     thor_objects = thor_get(event, "objects")
+#     result = []
+#     for obj in thor_objects:
+#         if obj["visible"]:
+#             result.append(obj)
+#     return result
 
 # Store visible objects in the self.visible_objects collection and print them out if needed
 def get_all_objects(event_or_controller, print_objects = False):
-    objects = event_or_controller.last_event.metadata['objects']
+    if hasattr(event_or_controller, 'last_event'):
+        # we've got a controller
+        objects = event_or_controller.last_event.metadata['objects']
+    else:
+        # we've got an event
+        objects = event_or_controller.metadata['objects']
 
     if print_objects:
         for obj in objects:
@@ -904,6 +909,30 @@ def get_all_objects_of_type(event_or_controller, obj_type_of_interest):
             objects_of_type.append(obj)
 
     return objects_of_type
+
+def is_named_object_visible(event_or_controller, obj_name_of_interest):
+    objects = get_all_objects(event_or_controller)
+
+    for obj in objects:
+        if obj.get("objectId") == obj_name_of_interest or obj.get("name") == obj_name_of_interest:
+            return obj['visible']
+
+    return False
+
+def inspect_object_visibility(event_or_controller, target_id):
+    objects = get_all_objects(event_or_controller)
+    for obj in objects:
+        # Match against objectId (or fallback to name)
+        if obj.get("objectId") == target_id or obj.get("name") == target_id:
+            print(
+                f"ID: {obj['objectId']} | "
+                f"visible: {obj['visible']} | "
+                f"isInteractable: {obj.get('isInteractable')} | "
+                f"distance: {obj.get('distance'):.2f}m | "
+                f"isOpen: {obj.get('isOpen')}"
+            )
+            return obj["visible"]
+    return False
 
 def get_objects_of_multiple_types(event_or_controller, obj_types_of_interest):
     objects = get_all_objects(event_or_controller)

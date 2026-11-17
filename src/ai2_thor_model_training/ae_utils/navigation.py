@@ -452,6 +452,9 @@ class NavigationUtils:
             target_position = {"x": door_center_pos['x'], "y": door_center_pos['y'], "z": door_center_pos['z']}
             target_position_point = Point(door_center_pos['x'], door_center_pos['z'])
             is_in_same_room = is_point_inside_room_ground_truth(target_position_tuple, room_of_placement[1])
+            door_name = door["name"]
+            door_id = door['objectId']
+            #print(door)
 
             try:
                 if extend_path: # if path doesn't need to be extended, then just calculate path to the doors
@@ -482,8 +485,8 @@ class NavigationUtils:
                     #    raise ValueError("Door too close to start pose")
 
                     # what two rooms does this door connect?
-                    door_name = door["name"]
-                    (_, room1_id, room2_id) = door_name.split("|")
+                    #door_name = door["name"]
+                    #(_, room1_id, room2_id) = door_name.split("|")
 
                     # print(room_of_placement)
                     # if room_of_placement["id"] == "room|" + str(room1_id):
@@ -548,7 +551,8 @@ class NavigationUtils:
                                          "in_same_room": is_in_same_room,
                                          "visible": door['visible'],
                                          "distance": door_path_length,
-                                         "door_pos": (door_center_pos['x'], door_center_pos['z'])})
+                                         "door_pos": (door_center_pos['x'], door_center_pos['z']),
+                                         "door_name": door_name})
                                          #"door_obj": door})
         #print("all_door_targets: ", all_door_targets)
 
@@ -597,9 +601,13 @@ class NavigationUtils:
             #print("Sel door rotation: ", door["rotation"])
             #print("Sel door isOpen: ", door["isOpen"])
             if visible_only:
-                return Point(selected_target["pos"]["x"], selected_target["pos"]["z"]), all_door_targets, selected_target['door_pos']
+                return {'target_point': Point(selected_target["pos"]["x"], selected_target["pos"]["z"]),
+                        'all_targets': all_door_targets,
+                        'door_pos': selected_target['door_pos'],
+                        'door_name': selected_target['door_name']}
             else:
-                return Point(selected_target["pos"]["x"], selected_target["pos"]["z"]), all_door_targets
+                return {'target_point': Point(selected_target["pos"]["x"], selected_target["pos"]["z"]),
+                        'all_targets': all_door_targets, 'door_pos': None, 'door_name': None}
         else:
             raise ValueError("No door found that can be navigated to")
 
